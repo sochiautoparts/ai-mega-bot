@@ -76,7 +76,7 @@ class AIRouter:
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
                     )
                 elif name == "pollinations":
-                    provider = provider_cls(timeout=PROVIDER_TIMEOUTS.get("image", 45.0))
+                    provider = provider_cls(timeout=PROVIDER_TIMEOUTS.get("text", 30.0))
                 elif name == "prodia":
                     provider = provider_cls(timeout=PROVIDER_TIMEOUTS.get("image", 45.0))
                 elif name == "cerebras":
