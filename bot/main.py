@@ -58,9 +58,9 @@ dp: Dispatcher = None
 _start_time: float = 0
 
 
-async def on_startup(bot_instance: Bot) -> None:
+async def on_startup(**kwargs) -> None:
     """Initialize all resources on bot startup."""
-    global db, ai_router, _start_time
+    global db, ai_router, _start_time, bot
     _start_time = time.time()
 
     logger.info("=== AI Mega Bot Starting ===")
@@ -97,50 +97,54 @@ async def on_startup(bot_instance: Bot) -> None:
         logger.error(f"Failed to set up owner license: {e}")
 
     # Store in bot instance for handler access
-    bot_instance["db"] = db
-    bot_instance["ai_router"] = ai_router
-    bot_instance["start_time"] = _start_time
+    if bot:
+        bot["db"] = db
+        bot["ai_router"] = ai_router
+        bot["start_time"] = _start_time
 
     # Send startup notification to admins
-    for admin_id in ADMIN_IDS:
-        if admin_id:
-            try:
-                provider_list = ", ".join(ai_router.providers.keys())
-                await bot_instance.send_message(
-                    admin_id,
-                    f"🟢 <b>AI Mega Bot запущен</b>\n\n"
-                    f"🤖 Провайдеров: {len(ai_router.providers)} ({provider_list})\n"
-                    f"📊 БД: {DB_PATH}\n"
-                    f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин",
-                    parse_mode="HTML",
-                )
-            except Exception as e:
-                logger.warning(f"Failed to notify admin {admin_id}: {e}")
+    if bot:
+        for admin_id in ADMIN_IDS:
+            if admin_id:
+                try:
+                    provider_list = ", ".join(ai_router.providers.keys())
+                    await bot.send_message(
+                        admin_id,
+                        f"🟢 <b>AI Mega Bot запущен</b>\n\n"
+                        f"🤖 Провайдеров: {len(ai_router.providers)} ({provider_list})\n"
+                        f"📊 БД: {DB_PATH}\n"
+                        f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин\n"
+                        f"👤 Владелец: Ultra (навсегда)",
+                        parse_mode="HTML",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to notify admin {admin_id}: {e}")
 
     logger.info("=== AI Mega Bot Ready ===")
 
 
-async def on_shutdown(bot_instance: Bot) -> None:
+async def on_shutdown(**kwargs) -> None:
     """Cleanup on shutdown."""
     global db, ai_router
 
     logger.info("=== AI Mega Bot Shutting Down ===")
 
     # Notify admins
-    for admin_id in ADMIN_IDS:
-        if admin_id:
-            try:
-                uptime = int(time.time() - _start_time) if _start_time else 0
-                hours, remainder = divmod(uptime, 3600)
-                minutes, seconds = divmod(remainder, 60)
-                await bot_instance.send_message(
-                    admin_id,
-                    f"🔴 <b>AI Mega Bot остановлен</b>\n\n"
-                    f"⏱ Uptime: {hours}ч {minutes}м {seconds}с",
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+    if bot:
+        for admin_id in ADMIN_IDS:
+            if admin_id:
+                try:
+                    uptime = int(time.time() - _start_time) if _start_time else 0
+                    hours, remainder = divmod(uptime, 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    await bot.send_message(
+                        admin_id,
+                        f"🔴 <b>AI Mega Bot остановлен</b>\n\n"
+                        f"⏱ Uptime: {hours}ч {minutes}м {seconds}с",
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
 
     # Export data
     if db:
@@ -280,7 +284,7 @@ async def main():
     """Main entry point."""
     global bot
 
-    # Create bot instance
+    # Create bot instance FIRST (needed for on_startup)
     bot = Bot(
         token=BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -299,13 +303,24 @@ async def main():
     session_end = time.time() + SESSION_DURATION_SECONDS
     logger.info(f"Session will end at {time.strftime('%H:%M:%S', time.localtime(session_end))}")
 
-    # Start polling
+    # Start polling with session timeout
     try:
+        # Schedule graceful shutdown before GitHub Actions timeout
+        async def session_timeout():
+            await asyncio.sleep(SESSION_DURATION_SECONDS)
+            logger.info("Session duration reached, shutting down gracefully...")
+            raise SystemExit(0)
+
+        timeout_task = asyncio.create_task(session_timeout())
+
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    except SystemExit:
+        logger.info("Bot stopped due to session timeout")
     except Exception as e:
         logger.critical(f"Bot polling error: {e}")
     finally:
-        await on_shutdown(bot)
+        timeout_task.cancel() if 'timeout_task' in dir() else None
+        await on_shutdown()
         await bot.session.close()
 
 
