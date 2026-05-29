@@ -123,3 +123,22 @@ Stage Summary:
 - All prices aligned: 149⭐/mo, 999⭐/yr, 2999⭐ lifetime
 - MiniApp only shows gitmoji-ai project
 - No security issues found
+---
+Task ID: 2
+Agent: main
+Task: Add partner mini apps + ensure 24/7 bot operation
+
+Work Log:
+- Added 8 partner mini apps to MiniApp (РосЗап, Шины24, ЛУКОЙЛ, Автокод, КолесоПро, Recars, Activ Global, Авиабилеты)
+- Created partner grid layout in CSS with responsive 2-column design
+- Added partner rendering logic in app.js with tg.openTelegramLink support
+- Added keep-alive workflow (every 30 min) that checks if bot is running and restarts if not
+- Updated run-bot.yml: 5h45m sessions with cron every 5h for overlap
+- Added GH_PAT_TOKEN secret for keep-alive workflow
+- Pushed all changes and triggered Pages deployment
+- Verified: MiniApp shows partner section, bot still running on GitHub Actions
+
+Stage Summary:
+- Partners section live at https://sochiautoparts.github.io/stars-pay-bot/
+- 24/7 coverage: run-bot (5h sessions, cron every 5h) + keep-alive (every 30 min check)
+- All 6 secrets configured: BOT_TOKEN, ADMIN_IDS, API_KEYS, MINIAPP_URL, GH_PAT_TOKEN + STARSPAY_API_KEY in gitmoji-ai
