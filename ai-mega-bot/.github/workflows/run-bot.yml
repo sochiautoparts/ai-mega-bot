@@ -1,0 +1,68 @@
+name: Run AI Mega Bot 24/7
+
+on:
+  schedule:
+    - cron: '0 */5 * * *'   # Every 5 hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+  ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+  OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+  GITHUB_TOKEN: ${{ secrets.GH_GITHUB_TOKEN }}
+  GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  HF_TOKEN: ${{ secrets.HF_TOKEN }}
+  GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+  API_SECRET: ${{ secrets.API_SECRET }}
+  LOG_LEVEL: INFO
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345  # 5h 45m — just under 6h GitHub limit
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Restore database from cache
+        uses: actions/cache@v4
+        with:
+          path: data/bot.db
+          key: ai-mega-bot-db-${{ github.run_id }}
+          restore-keys: |
+            ai-mega-bot-db-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run bot
+        run: python -m bot.main
+
+      - name: Commit licenses and stats
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f data/licenses.json ]; then
+            git add data/licenses.json
+          fi
+          if [ -f data/stats.json ]; then
+            git add data/stats.json
+          fi
+          git diff --staged --quiet || git commit -m "📊 Auto-sync data $(date +%Y-%m-%d_%H:%M)"
+          git push

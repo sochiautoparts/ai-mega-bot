@@ -1,0 +1,286 @@
+/* AI Mega Bot — Mini App Styles */
+:root {
+    --bg: #0f0f23;
+    --card-bg: #1a1a2e;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #7c3aed;
+    --accent-light: #a78bfa;
+    --pro: #f59e0b;
+    --pro-bg: #1c1508;
+    --ultra: #8b5cf6;
+    --ultra-bg: #1a0e2e;
+    --border: #2d2d4a;
+    --radius: 12px;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+.app {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+}
+
+/* Hero */
+.hero {
+    text-align: center;
+    padding: 32px 16px;
+}
+
+.hero-icon {
+    font-size: 64px;
+    margin-bottom: 12px;
+}
+
+.hero h1 {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--accent-light), var(--pro));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-subtitle {
+    font-size: 16px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.hero-desc {
+    font-size: 14px;
+    color: var(--accent-light);
+    margin-top: 8px;
+    letter-spacing: 2px;
+}
+
+/* Features */
+.features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 24px 0;
+}
+
+.feature-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+}
+
+.feature-card:nth-child(5) {
+    grid-column: 1 / -1;
+}
+
+.feature-icon {
+    font-size: 32px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.feature-card h3 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.feature-card p {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+/* Pricing */
+.pricing {
+    margin: 32px 0;
+}
+
+.pricing h2 {
+    text-align: center;
+    font-size: 22px;
+    margin-bottom: 20px;
+}
+
+.tier-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.tier-popular {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    background: var(--ultra);
+    color: white;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 4px;
+    letter-spacing: 1px;
+}
+
+.tier-pro {
+    border-color: var(--pro);
+    background: var(--pro-bg);
+}
+
+.tier-ultra {
+    border-color: var(--ultra);
+    background: var(--ultra-bg);
+}
+
+.tier-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.tier-badge {
+    font-size: 24px;
+}
+
+.tier-header h3 {
+    font-size: 20px;
+    font-weight: 800;
+}
+
+.tier-price {
+    font-size: 28px;
+    font-weight: 800;
+    margin-bottom: 16px;
+}
+
+.tier-price span {
+    font-size: 14px;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+.tier-features {
+    list-style: none;
+    margin-bottom: 20px;
+}
+
+.tier-features li {
+    font-size: 14px;
+    padding: 4px 0;
+}
+
+.tier-features li.disabled {
+    color: var(--text-muted);
+    text-decoration: line-through;
+}
+
+/* Buttons */
+.btn {
+    display: block;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 8px;
+}
+
+.btn:active {
+    transform: scale(0.98);
+}
+
+.btn-disabled {
+    background: #333;
+    color: #666;
+    cursor: not-allowed;
+}
+
+.btn-pro {
+    background: var(--pro);
+    color: #000;
+}
+
+.btn-pro:hover {
+    background: #d97706;
+}
+
+.btn-pro-outline {
+    background: transparent;
+    color: var(--pro);
+    border: 1px solid var(--pro);
+}
+
+.btn-ultra {
+    background: var(--ultra);
+    color: #fff;
+}
+
+.btn-ultra:hover {
+    background: #7c3aed;
+}
+
+.btn-ultra-outline {
+    background: transparent;
+    color: var(--ultra);
+    border: 1px solid var(--ultra);
+}
+
+/* Referral */
+.referral {
+    text-align: center;
+    padding: 24px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 24px 0;
+}
+
+.referral h2 {
+    font-size: 18px;
+    margin-bottom: 8px;
+}
+
+.referral p {
+    font-size: 14px;
+    color: var(--text-muted);
+}
+
+.referral-bonus {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--pro);
+    margin-top: 8px;
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.footer p {
+    margin: 2px 0;
+}
