@@ -26,19 +26,13 @@ router = Router()
 
 # ── /start ────────────────────────────────────────────────────
 @router.message(CommandStart())
-async def cmd_start(message: Message, state: FSMContext) -> None:
+async def cmd_start(message: Message, state: FSMContext, db=None) -> None:
     """Handle /start with optional referral deep-link."""
     await state.clear()
     user = message.from_user
     args = message.text.split(maxsplit=1)[1] if len(message.text.split()) > 1 else ""
 
-    # Resolve db from bot scope (set by middleware)
-    db = message.bot.get("db")
-    if db is None:
-        # Fallback: try middleware-injected data not available in Message handlers directly
-        # In aiogram 3, middleware data is not passed to message handlers by default
-        # We rely on bot["db"] set at startup
-        pass
+    # db is injected from workflow_data
 
     referred_by = None
     if args.startswith("REF"):
@@ -104,9 +98,9 @@ async def cmd_help(message: Message) -> None:
 
 # ── /refer ────────────────────────────────────────────────────
 @router.message(Command("refer"))
-async def cmd_refer(message: Message) -> None:
+async def cmd_refer(message: Message, db=None) -> None:
     """Show referral link and stats."""
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await message.answer("❌ Ошибка базы данных.")
         return
@@ -135,9 +129,9 @@ async def cmd_refer(message: Message) -> None:
 
 # ── /limits ───────────────────────────────────────────────────
 @router.message(Command("limits"))
-async def cmd_limits(message: Message) -> None:
+async def cmd_limits(message: Message, db=None) -> None:
     """Show current usage vs limits for user's tier."""
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await message.answer("❌ Ошибка базы данных.")
         return
@@ -177,9 +171,9 @@ async def cmd_limits(message: Message) -> None:
 
 # ── /mylicenses ───────────────────────────────────────────────
 @router.message(Command("mylicenses"))
-async def cmd_mylicenses(message: Message) -> None:
+async def cmd_mylicenses(message: Message, db=None) -> None:
     """Show active licenses."""
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await message.answer("❌ Ошибка базы данных.")
         return
@@ -215,9 +209,9 @@ async def cmd_mylicenses(message: Message) -> None:
 
 # ── /settings ─────────────────────────────────────────────────
 @router.message(Command("settings"))
-async def cmd_settings(message: Message) -> None:
+async def cmd_settings(message: Message, db=None) -> None:
     """Show settings keyboard."""
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     tier = "free"
     if db:
         tier = await db.get_user_tier(message.from_user.id)
@@ -264,10 +258,10 @@ async def cb_menu_image(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "menu:audio")
-async def cb_menu_audio(callback: CallbackQuery) -> None:
+async def cb_menu_audio(callback: CallbackQuery, db=None) -> None:
     """Audio menu button."""
     await callback.answer()
-    db = callback.bot.get("db")
+    # db is injected from workflow_data
     tier = "free"
     if db:
         tier = await db.get_user_tier(callback.from_user.id)
@@ -319,10 +313,10 @@ async def cb_menu_code(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "menu:limits")
-async def cb_menu_limits(callback: CallbackQuery) -> None:
+async def cb_menu_limits(callback: CallbackQuery, db=None) -> None:
     """Limits menu button — show limits inline."""
     await callback.answer()
-    db = callback.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await callback.message.edit_text("❌ Ошибка базы данных.")
         return
@@ -381,10 +375,10 @@ async def cb_menu_subscribe(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "menu:settings")
-async def cb_menu_settings(callback: CallbackQuery) -> None:
+async def cb_menu_settings(callback: CallbackQuery, db=None) -> None:
     """Settings menu button."""
     await callback.answer()
-    db = callback.bot.get("db")
+    # db is injected from workflow_data
     tier = "free"
     if db:
         tier = await db.get_user_tier(callback.from_user.id)
@@ -507,10 +501,10 @@ async def cb_set_lang(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("lang:"))
-async def cb_lang_selected(callback: CallbackQuery) -> None:
+async def cb_lang_selected(callback: CallbackQuery, db=None) -> None:
     """Handle language selection."""
     lang = callback.data.split(":")[1]
-    db = callback.bot.get("db")
+    # db is injected from workflow_data
     if db:
         # Update user language
         try:
@@ -532,9 +526,9 @@ async def cb_lang_selected(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "set:model")
-async def cb_set_model(callback: CallbackQuery) -> None:
+async def cb_set_model(callback: CallbackQuery, db=None) -> None:
     """Model selection (Pro+)."""
-    db = callback.bot.get("db")
+    # db is injected from workflow_data
     tier = "free"
     if db:
         tier = await db.get_user_tier(callback.from_user.id)
@@ -554,10 +548,10 @@ async def cb_set_model(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "set:clear_history")
-async def cb_set_clear_history(callback: CallbackQuery) -> None:
+async def cb_set_clear_history(callback: CallbackQuery, db=None) -> None:
     """Clear chat history."""
     await callback.answer()
-    db = callback.bot.get("db")
+    # db is injected from workflow_data
     if db:
         await db.clear_chat_history(callback.from_user.id)
 

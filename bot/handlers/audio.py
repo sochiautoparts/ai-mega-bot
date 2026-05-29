@@ -27,10 +27,9 @@ async def cmd_transcribe(message: Message) -> None:
 
 
 @router.message(F.voice | F.audio)
-async def handle_voice(message: Message) -> None:
+async def handle_voice(message: Message, db=None, ai_router=None) -> None:
     """Transcribe voice/audio messages."""
-    db = message.bot.get("db")
-    ai_router = message.bot.get("ai_router")
+    # db and ai_router are injected from workflow_data
 
     if not db or not ai_router:
         await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")
@@ -124,10 +123,9 @@ async def handle_voice(message: Message) -> None:
 
 
 @router.message(Command("tts"))
-async def cmd_tts(message: Message) -> None:
+async def cmd_tts(message: Message, db=None, ai_router=None) -> None:
     """Text-to-speech (Pro+ only)."""
-    db = message.bot.get("db")
-    ai_router = message.bot.get("ai_router")
+    # db and ai_router are injected from workflow_data
 
     if not db or not ai_router:
         await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")

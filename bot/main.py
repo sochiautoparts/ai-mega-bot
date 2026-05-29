@@ -96,11 +96,18 @@ async def on_startup(**kwargs) -> None:
     except Exception as e:
         logger.error(f"Failed to set up owner license: {e}")
 
-    # Store in bot instance for handler access
+    # Store in dispatcher workflow_data for handler access
+    # In aiogram 3.x, workflow_data is passed to handlers as kwargs
+    dp_ref = kwargs.get("dispatcher")
+    if dp_ref:
+        dp_ref.workflow_data["db"] = db
+        dp_ref.workflow_data["ai_router"] = ai_router
+        dp_ref.workflow_data["start_time"] = _start_time
+
+    # Also store on bot object via setattr (for easy handler access)
     if bot:
-        bot["db"] = db
-        bot["ai_router"] = ai_router
-        bot["start_time"] = _start_time
+        setattr(bot, "_db", db)
+        setattr(bot, "_ai_router", ai_router)
 
     # Send startup notification to admins
     if bot:

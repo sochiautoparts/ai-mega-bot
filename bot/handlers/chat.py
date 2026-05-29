@@ -18,19 +18,18 @@ router = Router()
 
 
 @router.message(Command("clear"))
-async def cmd_clear(message: Message) -> None:
+async def cmd_clear(message: Message, db=None) -> None:
     """Clear chat history."""
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if db:
         await db.clear_chat_history(message.from_user.id)
     await message.answer("🗑 История чата очищена!")
 
 
 @router.message(F.text, ~F.text.startswith("/"))
-async def handle_chat(message: Message) -> None:
+async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     """Handle any text message (non-command) as AI chat."""
-    db = message.bot.get("db")
-    ai_router = message.bot.get("ai_router")
+    # db and ai_router are injected from workflow_data
 
     if not db or not ai_router:
         await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")

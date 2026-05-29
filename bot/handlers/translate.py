@@ -17,10 +17,9 @@ router = Router()
 
 
 @router.message(Command("translate"))
-async def cmd_translate(message: Message) -> None:
+async def cmd_translate(message: Message, db=None, ai_router=None) -> None:
     """Translate text with optional target language prefix."""
-    db = message.bot.get("db")
-    ai_router = message.bot.get("ai_router")
+    # db and ai_router are injected from workflow_data
 
     if not db or not ai_router:
         await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")
