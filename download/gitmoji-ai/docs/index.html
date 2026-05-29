@@ -1,0 +1,129 @@
+---
+layout: default
+title: GitMoji AI — AI-Powered Commit Messages & Changelog Generator
+description: Never write a bad commit message again. AI-powered commit messages and changelog generator using OpenAI GPT models.
+---
+
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 20px;">
+
+<div style="text-align: center; margin-bottom: 60px;">
+<h1 style="font-size: 3.5em; margin-bottom: 10px;">🤖 GitMoji AI</h1>
+<p style="font-size: 1.5em; color: #666;">AI-powered commit messages & changelog generator</p>
+<p style="font-size: 1.2em; color: #888;">Never write a bad commit message again.</p>
+
+<div style="margin: 30px 0;">
+<a href="https://github.com/sochiautoparts/gitmoji-ai" style="background: #2ea44f; color: white; padding: 15px 30px; border-radius: 8px; text-decoration: none; font-size: 1.1em; font-weight: bold; margin: 0 10px;">⭐ Star on GitHub</a>
+<a href="https://pypi.org/project/gitmoji-ai/" style="background: #3775a9; color: white; padding: 15px 30px; border-radius: 8px; text-decoration: none; font-size: 1.1em; font-weight: bold; margin: 0 10px;">📦 Install from PyPI</a>
+</div>
+</div>
+
+<div style="background: #1e1e1e; color: #d4d4d4; padding: 25px; border-radius: 12px; margin-bottom: 50px; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.9em; line-height: 1.6; overflow-x: auto;">
+<pre style="margin: 0;"><span style="color: #6a9955;"># Install</span>
+<span style="color: #569cd6;">pip install</span> gitmoji-ai
+
+<span style="color: #6a9955;"># Generate AI commit message</span>
+<span style="color: #569cd6;">gmai</span> commit --stage
+
+<span style="color: #6a9955;"># Result:</span>
+<span style="color: #4ec9b0;">📊 Diff Analysis</span>
+  Files changed: <span style="color: #ce9178;">3</span>
+  Lines added: <span style="color: #6a9955;">+47</span>
+  Lines removed: <span style="color: #f44747;">-12</span>
+
+<span style="color: #4ec9b0;">💡 Commit Suggestions</span>
+┏━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ # ┃ Message                                 ┃ Confidence ┃
+┡───╇──────────────────────────────────────────╇────────────┥
+│ <span style="color: #b5cea8;">1</span> │ <span style="color: #6a9955;">feat(auth): add JWT token validation</span>     │ <span style="color: #6a9955;">95%</span>       │
+│ <span style="color: #b5cea8;">2</span> │ <span style="color: #6a9955;">✨ add JWT token validation to auth</span>      │ <span style="color: #6a9955;">90%</span>       │
+│ <span style="color: #b5cea8;">3</span> │ <span style="color: #6a9955;">feat(auth): implement JWT validation</span>    │ <span style="color: #6a9955;">85%</span>       │
+└───┴──────────────────────────────────────────┴────────────┘
+
+<span style="color: #569cd6;">✅ Committed!</span> feat(auth): add JWT token validation
+</pre>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; margin-bottom: 50px;">
+<div style="background: #f6f8fa; padding: 25px; border-radius: 12px;">
+<h3>💬 AI Commits</h3>
+<p>3 smart suggestions per diff. Conventional commits, emoji style, or plain. 6+ languages.</p>
+</div>
+<div style="background: #f6f8fa; padding: 25px; border-radius: 12px;">
+<h3>📝 Changelog</h3>
+<p>Auto-generate beautiful changelogs grouped by type. Keep a Changelog or Angular format.</p>
+</div>
+<div style="background: #f6f8fa; padding: 25px; border-radius: 12px;">
+<h3>🤖 GitHub Action</h3>
+<p>Use in CI/CD pipelines. Auto-changelog on push. Commit review on PR.</p>
+</div>
+</div>
+
+<div style="text-align: center; margin-bottom: 50px;">
+<h2>⚡ Quick Start</h2>
+</div>
+
+<div style="background: #f6f8fa; padding: 25px; border-radius: 12px; margin-bottom: 20px;">
+<h3>1️⃣ Install</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto;"><code>pip install gitmoji-ai</code></pre>
+</div>
+
+<div style="background: #f6f8fa; padding: 25px; border-radius: 12px; margin-bottom: 20px;">
+<h3>2️⃣ Configure</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto;"><code>export GMAI_OPENAI_API_KEY="sk-your-key"
+cd your-project
+gmai init</code></pre>
+</div>
+
+<div style="background: #f6f8fa; padding: 25px; border-radius: 12px; margin-bottom: 20px;">
+<h3>3️⃣ Use</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto;"><code>gmai commit --stage     # AI commit
+gmai changelog -v v1.0   # AI changelog</code></pre>
+</div>
+
+<div style="background: #f6f8fa; padding: 25px; border-radius: 12px; margin-bottom: 40px;">
+<h3>4️⃣ GitHub Action</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto;"><code>- uses: sochiautoparts/gitmoji-ai@v1
+  with:
+    openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+    generate-changelog: true
+    version: v1.2.0</code></pre>
+</div>
+
+<div style="text-align: center; margin-bottom: 40px;">
+<h2>💰 Pricing</h2>
+<table style="margin: 0 auto; border-collapse: collapse; font-size: 1.1em;">
+<tr style="border-bottom: 2px solid #ddd;">
+<th style="padding: 15px; text-align: left;">Feature</th>
+<th style="padding: 15px;">🆓 Free</th>
+<th style="padding: 15px;">⭐ Pro</th>
+</tr>
+<tr style="border-bottom: 1px solid #eee;">
+<td style="padding: 12px; text-align: left;">AI commits</td>
+<td style="padding: 12px;">50/month</td>
+<td style="padding: 12px; font-weight: bold; color: #2ea44f;">Unlimited</td>
+</tr>
+<tr style="border-bottom: 1px solid #eee;">
+<td style="padding: 12px; text-align: left;">AI changelogs</td>
+<td style="padding: 12px;">3/month</td>
+<td style="padding: 12px; font-weight: bold; color: #2ea44f;">Unlimited</td>
+</tr>
+<tr style="border-bottom: 1px solid #eee;">
+<td style="padding: 12px; text-align: left;">No watermark</td>
+<td style="padding: 12px;">❌</td>
+<td style="padding: 12px; color: #2ea44f;">✅</td>
+</tr>
+<tr style="border-bottom: 1px solid #eee;">
+<td style="padding: 12px; text-align: left;">Price</td>
+<td style="padding: 12px; font-weight: bold;">$0</td>
+<td style="padding: 12px; font-weight: bold;">$5/month</td>
+</tr>
+</table>
+</div>
+
+<div style="text-align: center; padding: 40px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 16px; color: white;">
+<h2 style="margin-top: 0;">🚀 Ready to never write a bad commit again?</h2>
+<p style="font-size: 1.2em; margin-bottom: 25px;">Join thousands of developers using GitMoji AI</p>
+<a href="https://github.com/sochiautoparts/gitmoji-ai" style="background: white; color: #764ba2; padding: 15px 40px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 1.1em;">Get Started →</a>
+</div>
+
+</div>

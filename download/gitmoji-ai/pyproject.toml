@@ -51,11 +51,11 @@ gitmoji-ai = "gitmoji_ai.cli:app"
 gmai = "gitmoji_ai.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/your-username/gitmoji-ai"
-Documentation = "https://github.com/your-username/gitmoji-ai#readme"
-Repository = "https://github.com/your-username/gitmoji-ai"
-Issues = "https://github.com/your-username/gitmoji-ai/issues"
-Changelog = "https://github.com/your-username/gitmoji-ai/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/sochiautoparts/gitmoji-ai"
+Documentation = "https://github.com/sochiautoparts/gitmoji-ai#readme"
+Repository = "https://github.com/sochiautoparts/gitmoji-ai"
+Issues = "https://github.com/sochiautoparts/gitmoji-ai/issues"
+Changelog = "https://github.com/sochiautoparts/gitmoji-ai/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]

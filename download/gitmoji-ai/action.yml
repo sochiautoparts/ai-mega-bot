@@ -1,0 +1,82 @@
+name: 'GitMoji AI — Auto Commit Messages'
+description: '🤖 AI-powered commit messages and changelog generator using OpenAI. Generate perfect conventional commits automatically.'
+author: 'sochiautoparts'
+branding:
+  icon: 'git-commit'
+  color: 'green'
+
+inputs:
+  openai-api-key:
+    description: 'OpenAI API key for AI commit generation'
+    required: false
+    default: ''
+  language:
+    description: 'Commit message language (en, ru, es, de, fr, ja, zh)'
+    required: false
+    default: 'en'
+  style:
+    description: 'Commit style: conventional, emoji, or plain'
+    required: false
+    default: 'conventional'
+  model:
+    description: 'OpenAI model to use (gpt-4o-mini, gpt-4o, gpt-4)'
+    required: false
+    default: 'gpt-4o-mini'
+  generate-changelog:
+    description: 'Also generate/update CHANGELOG.md'
+    required: false
+    default: 'false'
+  version:
+    description: 'Version tag for changelog (e.g., v1.2.0)'
+    required: false
+    default: 'Unreleased'
+  changelog-format:
+    description: 'Changelog format: keepachangelog or angular'
+    required: false
+    default: 'keepachangelog'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install GitMoji AI
+      shell: bash
+      run: pip install gitmoji-ai
+
+    - name: Generate commit suggestions
+      shell: bash
+      env:
+        GMAI_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        GMAI_DEFAULT_LANGUAGE: ${{ inputs.language }}
+        GMAI_COMMIT_STYLE: ${{ inputs.style }}
+        GMAI_OPENAI_MODEL: ${{ inputs.model }}
+      run: |
+        echo "🤖 GitMoji AI: Analyzing changes..."
+        gmai info
+        echo ""
+        echo "💡 Suggested commit messages:"
+        gmai commit --yes 2>/dev/null || echo "No staged changes to analyze"
+
+    - name: Generate Changelog
+      if: ${{ inputs.generate-changelog == 'true' }}
+      shell: bash
+      env:
+        GMAI_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        GMAI_DEFAULT_LANGUAGE: ${{ inputs.language }}
+      run: |
+        echo "📝 Generating changelog..."
+        gmai changelog --version "${{ inputs.version }}" --format "${{ inputs.changelog-format }}" --output CHANGELOG.md
+        echo "✅ CHANGELOG.md updated!"
+
+    - name: Commit Changelog
+      if: ${{ inputs.generate-changelog == 'true' }}
+      shell: bash
+      run: |
+        git config user.name "gitmoji-ai[bot]"
+        git config user.email "bot@gitmoji-ai.dev"
+        git add CHANGELOG.md
+        git diff --staged --quiet || git commit -m "📝 docs: update CHANGELOG.md [skip ci]"

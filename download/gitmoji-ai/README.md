@@ -8,9 +8,9 @@
 
 [![PyPI](https://img.shields.io/pypi/v/gitmoji-ai?color=green&label=PyPI)](https://pypi.org/project/gitmoji-ai/)
 [![Python](https://img.shields.io/pypi/pyversions/gitmoji-ai?label=Python)](https://pypi.org/project/gitmoji-ai/)
-[![Tests](https://img.shields.io/github/actions/workflow/status/your-username/gitmoji-ai/ci.yml?label=Tests)](https://github.com/your-username/gitmoji-ai/actions)
-[![License](https://img.shields.io/github/license/your-username/gitmoji-ai?label=License)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/your-username/gitmoji-ai?style=social)](https://github.com/your-username/gitmoji-ai)
+[![Tests](https://img.shields.io/github/actions/workflow/status/sochiautoparts/gitmoji-ai/ci.yml?label=Tests)](https://github.com/sochiautoparts/gitmoji-ai/actions)
+[![License](https://img.shields.io/github/license/sochiautoparts/gitmoji-ai?label=License)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/sochiautoparts/gitmoji-ai?style=social)](https://github.com/sochiautoparts/gitmoji-ai)
 
 [Installation](#-installation) • [Quick Start](#-quick-start) • [Features](#-features) • [GitHub Action](#-github-action) • [Pro](#-pro-version) • [Contributing](#-contributing)
 
@@ -190,7 +190,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: your-username/gitmoji-ai/action@v1
+      - uses: sochiautoparts/gitmoji-ai/action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           generate-changelog: true
@@ -214,7 +214,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: your-username/gitmoji-ai/action@v1
+      - uses: sochiautoparts/gitmoji-ai/action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           language: en
@@ -335,8 +335,8 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 <div align="center">
 
-**Made with 🤖 and ❤️ by [GitMoji AI](https://github.com/your-username/gitmoji-ai)**
+**Made with 🤖 and ❤️ by [GitMoji AI](https://github.com/sochiautoparts/gitmoji-ai)**
 
-[⭐ Star on GitHub](https://github.com/your-username/gitmoji-ai) • [🐛 Report Bug](https://github.com/your-username/gitmoji-ai/issues) • [💡 Request Feature](https://github.com/your-username/gitmoji-ai/issues)
+[⭐ Star on GitHub](https://github.com/sochiautoparts/gitmoji-ai) • [🐛 Report Bug](https://github.com/sochiautoparts/gitmoji-ai/issues) • [💡 Request Feature](https://github.com/sochiautoparts/gitmoji-ai/issues)
 
 </div>
