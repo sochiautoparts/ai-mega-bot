@@ -159,10 +159,9 @@ class Database:
             "SELECT * FROM users WHERE user_id = ?", (user_id,)
         ) as cur:
             row = await cur.fetchone()
-
-        if row:
-            columns = [desc[0] for desc in cur.description]
-            return dict(zip(columns, row))
+            if row:
+                columns = [desc[0] for desc in cur.description]
+                return dict(zip(columns, row))
 
         # Generate referral code
         import secrets

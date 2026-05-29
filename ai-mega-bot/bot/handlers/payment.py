@@ -191,10 +191,10 @@ async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery) -> None:
 
 # ── Successful payment ────────────────────────────────────────
 @router.message(F.successful_payment)
-async def successful_payment_handler(message: Message) -> None:
+async def successful_payment_handler(message: Message, db=None) -> None:
     """Handle successful payment — create license and confirm."""
     payment: SuccessfulPayment = message.successful_payment
-    db = message.bot.get("db")
+    # db is injected from workflow_data
 
     if not db:
         logger.error("Database not available during payment processing!")
@@ -304,9 +304,9 @@ async def successful_payment_handler(message: Message) -> None:
 
 # ── License key activation ────────────────────────────────────
 @router.message(LicenseActivation.waiting_for_key, F.text)
-async def process_license_key(message: Message, state: FSMContext) -> None:
+async def process_license_key(message: Message, state: FSMContext, db=None) -> None:
     """Process license key input from user."""
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await message.answer("❌ Ошибка базы данных.")
         await state.clear()

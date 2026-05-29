@@ -17,10 +17,9 @@ router = Router()
 
 
 @router.message(Command("image"))
-async def cmd_image(message: Message) -> None:
+async def cmd_image(message: Message, db=None, ai_router=None) -> None:
     """Generate image from text prompt."""
-    db = message.bot.get("db")
-    ai_router = message.bot.get("ai_router")
+    # db and ai_router are injected from workflow_data
 
     if not db or not ai_router:
         await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")

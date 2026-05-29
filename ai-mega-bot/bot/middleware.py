@@ -11,7 +11,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from aiogram.exceptions import TelegramAPIError
 
-from bot.config import ADMIN_IDS, TIER_LIMITS
+from bot.config import ADMIN_IDS, TIER_LIMITS, OWNER_ID
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +88,11 @@ class TierCheckMiddleware(BaseMiddleware):
         if not user_id:
             return await handler(event, data)
 
-        # Admins bypass all checks
-        if user_id in ADMIN_IDS:
+        # Admins/Owner bypass all checks — always Ultra with unlimited access
+        if user_id in ADMIN_IDS or user_id == OWNER_ID:
             data["tier"] = "ultra"
+            data["is_admin"] = True
+            data["is_owner"] = (user_id == OWNER_ID)
             return await handler(event, data)
 
         # Get user tier

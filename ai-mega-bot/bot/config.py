@@ -131,7 +131,9 @@ def _env_list(name: str, default: Optional[List[str]] = None) -> List[str]:
 
 # ── Bot Configuration ────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
-ADMIN_IDS: List[int] = _env_list("ADMIN_IDS", [0])
+OWNER_ID: int = 265070804  # Bot owner — permanent Ultra admin, cannot be removed
+_raw_admin_ids: List[int] = [int(x) for x in _env_list("ADMIN_IDS", [str(OWNER_ID)]) if x.strip().isdigit()]
+ADMIN_IDS: List[int] = list(set(_raw_admin_ids + [OWNER_ID]))
 BOT_USERNAME: str = _env("BOT_USERNAME", "aimega_bot")
 BOT_NAME: str = _env("BOT_NAME", "AI Mega Bot")
 

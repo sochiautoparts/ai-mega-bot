@@ -10,7 +10,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import Message
 
-from bot.config import TIER_LIMITS
+from bot.config import TIER_LIMITS, OWNER_ID, ADMIN_IDS
 from ai.router import AllProvidersExhaustedError
 
 logger = logging.getLogger(__name__)
@@ -18,19 +18,18 @@ router = Router()
 
 
 @router.message(Command("clear"))
-async def cmd_clear(message: Message) -> None:
+async def cmd_clear(message: Message, db=None) -> None:
     """Clear chat history."""
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if db:
         await db.clear_chat_history(message.from_user.id)
     await message.answer("🗑 История чата очищена!")
 
 
 @router.message(F.text, ~F.text.startswith("/"))
-async def handle_chat(message: Message) -> None:
+async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     """Handle any text message (non-command) as AI chat."""
-    db = message.bot.get("db")
-    ai_router = message.bot.get("ai_router")
+    # db and ai_router are injected from workflow_data
 
     if not db or not ai_router:
         await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")
@@ -51,17 +50,18 @@ async def handle_chat(message: Message) -> None:
     tier = await db.get_user_tier(user_id)
     limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
 
-    # Check daily limit
-    daily_usage = await db.get_daily_usage(user_id, "text")
-    if daily_usage >= limits.text_requests:
-        if limits.text_requests >= 9999:
-            pass  # Unlimited
-        else:
-            await message.answer(
-                f"⏳ Вы достигли дневного лимита чата ({limits.text_requests}).\n"
-                "Оформите подписку для увеличения лимитов: /subscribe"
-            )
-            return
+    # Check daily limit (owner/admins bypass)
+    if user_id not in ADMIN_IDS and user_id != OWNER_ID:
+        daily_usage = await db.get_daily_usage(user_id, "text")
+        if daily_usage >= limits.text_requests:
+            if limits.text_requests >= 9999:
+                pass  # Unlimited
+            else:
+                await message.answer(
+                    f"⏳ Вы достигли дневного лимита чата ({limits.text_requests}).\n"
+                    "Оформите подписку для увеличения лимитов: /subscribe"
+                )
+                return
 
     # Show typing indicator
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")

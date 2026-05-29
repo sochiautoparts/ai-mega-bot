@@ -41,12 +41,12 @@ async def cmd_admin(message: Message) -> None:
 
 # ── /genkey ──────────────────────────────────────────────────
 @router.message(Command("genkey"))
-async def cmd_genkey(message: Message) -> None:
+async def cmd_genkey(message: Message, db=None) -> None:
     """Generate a license key manually."""
     if not _is_admin(message.from_user.id):
         return
 
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await message.answer("❌ Ошибка базы данных.")
         return
@@ -72,12 +72,12 @@ async def cmd_genkey(message: Message) -> None:
 
 # ── /resetlimits ─────────────────────────────────────────────
 @router.message(Command("resetlimits"))
-async def cmd_resetlimits(message: Message) -> None:
+async def cmd_resetlimits(message: Message, db=None) -> None:
     """Reset daily limits for a user."""
     if not _is_admin(message.from_user.id):
         return
 
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await message.answer("❌ Ошибка базы данных.")
         return
@@ -99,12 +99,12 @@ async def cmd_resetlimits(message: Message) -> None:
 
 # ── /providerstats ───────────────────────────────────────────
 @router.message(Command("providerstats"))
-async def cmd_providerstats(message: Message) -> None:
+async def cmd_providerstats(message: Message, ai_router=None) -> None:
     """Show AI provider usage statistics."""
     if not _is_admin(message.from_user.id):
         return
 
-    ai_router = message.bot.get("ai_router")
+    # ai_router is injected from workflow_data
     if not ai_router:
         await message.answer("❌ AI Router не инициализирован.")
         return
@@ -122,12 +122,12 @@ async def cmd_providerstats(message: Message) -> None:
 
 # ── /broadcast ───────────────────────────────────────────────
 @router.message(Command("broadcast"))
-async def cmd_broadcast(message: Message) -> None:
+async def cmd_broadcast(message: Message, db=None) -> None:
     """Broadcast message to all users."""
     if not _is_admin(message.from_user.id):
         return
 
-    db = message.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await message.answer("❌ Ошибка базы данных.")
         return
@@ -171,13 +171,13 @@ async def cmd_broadcast(message: Message) -> None:
 
 # ── Admin callbacks ──────────────────────────────────────────
 @router.callback_query(F.data == "admin:stats")
-async def cb_admin_stats(callback: CallbackQuery) -> None:
+async def cb_admin_stats(callback: CallbackQuery, db=None) -> None:
     """Show full admin statistics."""
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
 
-    db = callback.bot.get("db")
+    # db is injected from workflow_data
     if not db:
         await callback.message.edit_text("❌ Ошибка базы данных.")
         return
@@ -231,13 +231,13 @@ async def cb_admin_genkey(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "admin:providers")
-async def cb_admin_providers(callback: CallbackQuery) -> None:
+async def cb_admin_providers(callback: CallbackQuery, ai_router=None) -> None:
     """Show provider statistics."""
     if not _is_admin(callback.from_user.id):
         await callback.answer("⛔ Доступ запрещён.", show_alert=True)
         return
 
-    ai_router = callback.bot.get("ai_router")
+    # ai_router is injected from workflow_data
     if not ai_router:
         await callback.message.edit_text("❌ AI Router не инициализирован.")
         return
