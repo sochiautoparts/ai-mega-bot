@@ -22,6 +22,7 @@ PROVIDER_DAILY_LIMITS = {
     "prodia": 99999,
     "groq_whisper": 500,
     "cerebras": 10000,
+    "grok": 10000,
 }
 
 
