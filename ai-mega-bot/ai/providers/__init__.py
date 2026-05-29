@@ -7,6 +7,7 @@ from ai.providers.gemini_provider import GeminiProvider
 from ai.providers.huggingface_provider import HuggingFaceProvider
 from ai.providers.pollinations_provider import PollinationsProvider
 from ai.providers.prodia_provider import ProdiaProvider
+from ai.providers.cerebras_provider import CerebrasProvider
 
 ALL_PROVIDERS = {
     "groq": GroqProvider,
@@ -21,4 +22,5 @@ ALL_PROVIDERS = {
     "pollinations": PollinationsProvider,
     "prodia": ProdiaProvider,
     "groq_whisper": GroqProvider,
+    "cerebras": CerebrasProvider,
 }

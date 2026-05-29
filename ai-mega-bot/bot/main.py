@@ -115,10 +115,17 @@ async def on_startup(**kwargs) -> None:
             if admin_id:
                 try:
                     provider_list = ", ".join(ai_router.providers.keys())
+                    # Count free providers that are always available
+                    free_providers = [p for p in ai_router.providers.keys()
+                                     if p in ("pollinations", "prodia")]
+                    paid_providers = [p for p in ai_router.providers.keys()
+                                     if p not in ("pollinations", "prodia")]
                     await bot.send_message(
                         admin_id,
                         f"🟢 <b>AI Mega Bot запущен</b>\n\n"
-                        f"🤖 Провайдеров: {len(ai_router.providers)} ({provider_list})\n"
+                        f"🤖 Провайдеров: {len(ai_router.providers)}\n"
+                        f"   🆓 Бесплатные: {', '.join(free_providers) or 'нет'}\n"
+                        f"   🔑 С ключами: {', '.join(paid_providers) or 'нет'}\n"
                         f"📊 БД: {DB_PATH}\n"
                         f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин\n"
                         f"👤 Владелец: Ultra (навсегда)",

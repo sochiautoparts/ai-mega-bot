@@ -46,9 +46,10 @@ jobs:
           BOT_USERNAME: aimega_bot
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           API_SECRET: ${{ secrets.API_SECRET }}
           DB_PATH: data/bot.db

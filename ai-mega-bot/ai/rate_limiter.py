@@ -19,8 +19,9 @@ PROVIDER_DAILY_LIMITS = {
     "huggingface_tts": 500,
     "huggingface_nllb": 1000,
     "pollinations": 99999,
-    "prodia": 200,
+    "prodia": 99999,
     "groq_whisper": 500,
+    "cerebras": 10000,
 }
 
 

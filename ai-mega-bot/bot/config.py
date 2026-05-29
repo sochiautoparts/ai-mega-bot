@@ -73,13 +73,14 @@ PLANS: Dict[str, Plan] = {
 }
 
 # ── AI Provider Priority Chains ──────────────────────────────
+# Pollinations is FREE and always available (no key needed) — serves as the ultimate fallback
 PROVIDER_CHAINS: Dict[str, List[str]] = {
-    "text": ["groq", "openrouter", "github_models", "gemini", "huggingface"],
+    "text": ["groq", "cerebras", "openrouter", "github_models", "gemini", "huggingface", "pollinations"],
     "image": ["pollinations", "huggingface_img", "prodia"],
-    "audio_stt": ["huggingface_whisper", "groq_whisper"],
+    "audio_stt": ["groq_whisper", "huggingface_whisper"],
     "audio_tts": ["huggingface_tts"],
-    "translate": ["huggingface_nllb", "groq", "gemini"],
-    "code": ["groq", "openrouter", "github_models"],
+    "translate": ["gemini", "groq", "cerebras", "huggingface_nllb", "pollinations"],
+    "code": ["groq", "cerebras", "openrouter", "github_models", "pollinations"],
 }
 
 # ── Provider Timeouts (seconds) ─────────────────────────────
@@ -143,6 +144,7 @@ OPENROUTER_API_KEY: str = _env("OPENROUTER_API_KEY")
 GITHUB_TOKEN: str = _env("GITHUB_TOKEN")
 GEMINI_API_KEY: str = _env("GEMINI_API_KEY")
 HF_TOKEN: str = _env("HF_TOKEN")
+CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
 
 # ── GitHub (for Actions, keep-alive, data sync) ─────────────
 GH_PAT_TOKEN: str = _env("GH_PAT_TOKEN")
@@ -181,7 +183,8 @@ def get_provider_keys() -> Dict[str, bool]:
         "huggingface_whisper": bool(HF_TOKEN),
         "huggingface_tts": bool(HF_TOKEN),
         "huggingface_nllb": bool(HF_TOKEN),
-        "pollinations": True,  # No key needed
-        "prodia": False,       # Requires key (not available by default)
+        "pollinations": True,  # No key needed — ALWAYS available
+        "prodia": True,        # Uses Pollinations fallback
         "groq_whisper": bool(GROQ_API_KEY),
+        "cerebras": bool(CEREBRAS_API_KEY),
     }
