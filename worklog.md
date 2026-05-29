@@ -58,3 +58,41 @@ Stage Summary:
 - Bot link: https://t.me/allstarspay_bot
 - Mini App: https://sochiautoparts.github.io/stars-pay-bot/
 - GitHub Actions now reference STARSPAY_API_URL, STARSPAY_API_KEY, LICENSE_KEY secrets
+
+---
+Task ID: 3
+Agent: general-purpose
+Task: Update gitmoji-ai license verification to use public GitHub JSON (no API server needed)
+
+Work Log:
+- Cloned gitmoji-ai repo from GitHub
+- Rewrote src/gitmoji_ai/usage.py with two-tier license verification:
+  - Primary: _verify_via_json() — fetches public licenses.json from GitHub
+    - URL: https://raw.githubusercontent.com/sochiautoparts/stars-pay-bot/main/data/licenses.json
+    - Computes hashlib.sha256(key.encode()).hexdigest()[:16] and matches against key_hash
+    - Checks active field and expires_at (0 = lifetime)
+    - No authentication, no rate limit, no API server required
+  - Fallback: _verify_via_api() — REST API if STARSPAY_API_URL is set
+    - POST {STARSPAY_API_URL}/api/v1/verify with X-API-Key header and body {"key": "..."}
+  - verify_license() orchestrates both tiers (JSON first, then API)
+  - is_pro() reads LICENSE_KEY env var, calls verify_license(), caches result for 1 hour
+  - _save_license_locally() saves verified licenses to SQLite for offline use
+  - Backward-compatible: activate_license(), check_license_valid(), check_license_with_api(), get_usage_stats() all preserved
+- Updated docs/index.html:
+  - "Buy Pro" button links to https://t.me/allstarspay_bot
+  - Replaced "Mini App" button with license verification info in features section
+  - Updated CTA section to note no API server needed
+  - Simplified to single @allstarspay_bot link
+- Updated README.md:
+  - Added "License Verification (No API Server Needed!)" section
+  - Documented two-tier verification: JSON primary + API fallback
+  - Updated env var documentation: LICENSE_KEY (required), STARSPAY_API_URL (optional), STARSPAY_API_KEY (optional)
+  - Updated architecture section to note "JSON + API" in usage.py
+- Committed and pushed all changes (commit 6fb1187)
+
+Stage Summary:
+- License verification now works without any API server (public GitHub JSON)
+- 3 files updated: usage.py, docs/index.html, README.md
+- All changes committed and pushed to main branch
+- Bot link: https://t.me/allstarspay_bot
+- JSON URL: https://raw.githubusercontent.com/sochiautoparts/stars-pay-bot/main/data/licenses.json
