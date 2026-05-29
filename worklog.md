@@ -142,3 +142,22 @@ Stage Summary:
 - Partners section live at https://sochiautoparts.github.io/stars-pay-bot/
 - 24/7 coverage: run-bot (5h sessions, cron every 5h) + keep-alive (every 30 min check)
 - All 6 secrets configured: BOT_TOKEN, ADMIN_IDS, API_KEYS, MINIAPP_URL, GH_PAT_TOKEN + STARSPAY_API_KEY in gitmoji-ai
+---
+Task ID: 3
+Agent: main
+Task: Fix MiniApp buy button to redirect to bot
+
+Work Log:
+- Identified the problem: buyProduct() used tg.sendData() which closes MiniApp without triggering payment
+- Fixed buyProduct() to use tg.openTelegramLink() with deep link directly
+- Changed button text from "Купить за X ⭐" to "💳 Перейти к оплате →"
+- Added buy-hint box explaining that payment happens in bot
+- Added CSS for .btn-buy with arrow animation and .buy-hint style
+- Deep link format: https://t.me/allstarspay_bot?start=buy_{projectId}_{planId}
+- Bot already handles this deep link in cmd_start handler (buy_ prefix check)
+- Pushed and deployed to GitHub Pages
+
+Stage Summary:
+- MiniApp buy button now clearly redirects user to bot chat
+- Flow: MiniApp → click "Перейти к оплате" → opens bot with deep link → bot sends invoice → user pays with Stars
+- Live at https://sochiautoparts.github.io/stars-pay-bot/
