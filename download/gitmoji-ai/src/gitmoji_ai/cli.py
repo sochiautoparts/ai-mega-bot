@@ -59,15 +59,25 @@ def commit(
 ):
     """🤖 Generate AI commit message and commit"""
 
-    # Check limits
+    # Check limits (also checks GitHub Sponsors)
+    from gitmoji_ai.sponsors import is_pro_via_sponsor
+    is_sponsor, _ = is_pro_via_sponsor()
+    if is_sponsor:
+        settings = get_settings()
+        if not settings.is_pro:
+            settings.pro_license_key = "sponsor"
+
     allowed, remaining = check_limit("commit")
     if not allowed:
         settings = get_settings()
         console.print(Panel(
             f"[red]Monthly limit reached![/red] ({settings.free_commits_per_month} commits/month)\n\n"
-            f"Upgrade to [bold green]Pro[/bold green] for unlimited commits:\n"
-            f"  [cyan]gmai pro activate YOUR_KEY[/cyan]\n\n"
-            f"Get a key at: [link]https://gitmoji-ai.dev[/link]",
+            f"Upgrade to [bold green]Pro[/bold green]:\n\n"
+            f"  💜 [bold]GitHub Sponsors[/bold] (recommended):\n"
+            f"  [link]https://github.com/sponsors/sochiautoparts[/link]\n"
+            f"  Then: [cyan]gmai pro login[/cyan]\n\n"
+            f"  🔑 Or use a license key:\n"
+            f"  [cyan]gmai pro activate YOUR_KEY[/cyan]",
             title="⚠️ Free Tier Limit",
             border_style="red",
         ))
@@ -260,8 +270,15 @@ def info(
     else:
         repo_panel = Panel("  [red]Not a git repository[/red]", title="📁 Repository", border_style="red")
 
-    # Usage panel
-    plan = "⭐ Pro" if stats["is_pro"] else "🆓 Free"
+    # Usage panel — check all Pro sources
+    from gitmoji_ai.sponsors import is_pro_via_sponsor
+    is_sponsor, sponsor_tier = is_pro_via_sponsor()
+    if is_sponsor:
+        plan = f"⭐ Pro ({sponsor_tier})"
+    elif stats["is_pro"]:
+        plan = "⭐ Pro (License Key)"
+    else:
+        plan = "🆓 Free"
     usage_panel = Panel(
         f"  [bold]Plan:[/bold] {plan}\n"
         f"  [bold]Commits this month:[/bold] {stats['commits_this_month']}/{stats['commit_limit']}\n"
@@ -283,47 +300,117 @@ def info(
 
 @app.command()
 def pro(
-    action: str = typer.Argument(..., help="activate | status | purchase"),
-    key: Optional[str] = typer.Argument(None, help="License key"),
+    action: str = typer.Argument(..., help="login | activate | status | purchase | logout"),
+    key: Optional[str] = typer.Argument(None, help="License key or GitHub PAT"),
     email: str = typer.Option("", "--email", "-e", help="Email for license"),
 ):
-    """⭐ Manage Pro license"""
+    """⭐ Manage Pro license (GitHub Sponsors or license key)"""
 
-    if action == "activate":
+    if action == "login":
+        # GitHub Sponsors flow
+        if key:
+            # User provided GitHub PAT
+            console.print("[dim]🔍 Checking GitHub sponsor status...[/dim]")
+            from gitmoji_ai.sponsors import validate_sponsor_token
+            is_pro, info = validate_sponsor_token(key)
+            if is_pro and info:
+                console.print(Panel(
+                    f"[bold green]✅ Pro activated via GitHub Sponsors![/bold green]\n\n"
+                    f"  Account: [cyan]@{info.github_login}[/cyan]\n"
+                    f"  Tier: [bold]{info.tier_name}[/bold] (${info.tier_amount}/month)\n\n"
+                    f"Your sponsorship is your Pro license.\n"
+                    f"Cancel sponsorship = Pro expires at end of billing period.",
+                    title="⭐ Pro Active",
+                    border_style="green",
+                ))
+            else:
+                console.print(Panel(
+                    "[yellow]⚠️ Not a sponsor yet[/yellow]\n\n"
+                    "To get Pro via GitHub Sponsors:\n\n"
+                    "  [bold]Step 1:[/bold] Sponsor the project:\n"
+                    "  [link]https://github.com/sponsors/sochiautoparts[/link]\n\n"
+                    "  [bold]Step 2:[/bold] Choose a tier:\n"
+                    "  • $5/month → Pro (unlimited commits + changelogs)\n"
+                    "  • $20/month → Team (Pro + team features)\n\n"
+                    "  [bold]Step 3:[/bold] Run again:\n"
+                    "  [cyan]gmai pro login <your-github-pat>[/cyan]\n\n"
+                    "  [dim]Create PAT: github.com/settings/tokens/new?scopes=read:user[/dim]",
+                    title="💡 Become a Sponsor",
+                    border_style="gold",
+                ))
+        else:
+            # Interactive flow
+            from gitmoji_ai.sponsors import device_flow_login
+            device_flow_login()
+
+    elif action == "activate":
+        # Legacy license key flow
         if not key:
             key = Prompt.ask("Enter your license key")
         if activate_license(key, email):
-            # Also save to settings
             console.print("[green]✅ Pro license activated![/green]")
             console.print("[dim]Set GMAI_PRO_LICENSE_KEY env var to persist.[/dim]")
         else:
             console.print("[red]❌ Invalid license key[/red]")
 
     elif action == "status":
+        # Check all Pro sources
+        from gitmoji_ai.sponsors import is_pro_via_sponsor
         from gitmoji_ai.usage import check_license_valid
-        if check_license_valid():
-            console.print("[green]⭐ Pro license is active[/green]")
+
+        # Check GitHub Sponsors first
+        is_sponsor, tier = is_pro_via_sponsor()
+        if is_sponsor:
+            console.print(Panel(
+                f"[bold green]⭐ Pro is active![/bold green]\n\n"
+                f"  Via: {tier}\n\n"
+                f"  ✅ Unlimited AI commits\n"
+                f"  ✅ Unlimited changelogs\n"
+                f"  ✅ No watermarks",
+                title="Pro Status",
+                border_style="green",
+            ))
+        elif check_license_valid():
+            console.print("[green]⭐ Pro license key is active[/green]")
         else:
-            console.print("[yellow]🆓 Using free tier[/yellow]")
-            console.print("Upgrade at: [link]https://gitmoji-ai.dev[/link]")
+            stats = get_usage_stats()
+            console.print(Panel(
+                f"[yellow]🆓 Using free tier[/yellow]\n\n"
+                f"  Commits: {stats['commits_this_month']}/{stats['commit_limit']} this month\n"
+                f"  Changelogs: {stats['changelogs_this_month']}/{stats['changelog_limit']} this month\n\n"
+                f"[bold]Upgrade to Pro:[/bold]\n"
+                f"  💜 GitHub Sponsors: [link]https://github.com/sponsors/sochiautoparts[/link]\n"
+                f"  🔑 License key: [cyan]gmai pro activate KEY[/cyan]",
+                title="Free Tier",
+                border_style="yellow",
+            ))
 
     elif action == "purchase":
         console.print(Panel(
             "⭐ [bold]GitMoji AI Pro[/bold]\n\n"
             "🚀 Unlimited AI commits & changelogs\n"
-            "🚀 No watermarks\n"
+            "🚀 No watermarks in commit messages\n"
             "🚀 Priority support\n"
             "🚀 Team features\n\n"
-            "[bold]Pricing:[/bold]\n"
-            "  Personal: $5/month\n"
-            "  Team: $20/month\n\n"
-            "Purchase at: [link]https://gitmoji-ai.dev/pricing[/link]",
+            "[bold]💜 Via GitHub Sponsors (recommended):[/bold]\n"
+            "  Pro: $5/month\n"
+            "  Team: $20/month\n"
+            "  [link]https://github.com/sponsors/sochiautoparts[/link]\n\n"
+            "[bold]🔑 Via License Key:[/bold]\n"
+            "  Coming soon at gitmoji-ai.dev\n\n"
+            "[dim]Your sponsorship = your Pro license. Cancel anytime.[/dim]",
             border_style="gold",
         ))
 
+    elif action == "logout":
+        from gitmoji_ai.sponsors import clear_github_token
+        clear_github_token()
+        console.print("[green]🔓 GitHub sponsor token removed[/green]")
+        console.print("[dim]Run 'gmai pro login' to re-link your sponsorship[/dim]")
+
     else:
         console.print(f"[red]Unknown action: {action}[/red]")
-        console.print("[dim]Use: activate, status, or purchase[/dim]")
+        console.print("[dim]Use: login, activate, status, purchase, or logout[/dim]")
 
 
 @app.command()

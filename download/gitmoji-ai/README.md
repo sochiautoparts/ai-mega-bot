@@ -246,7 +246,9 @@ jobs:
 - **Team features** — shared settings and changelogs
 - **Priority support** — faster responses
 
-### Pricing
+### 💜 Get Pro via GitHub Sponsors (recommended)
+
+Your sponsorship = your Pro license. Cancel anytime.
 
 | Plan | Price | Best for |
 |------|-------|----------|
@@ -254,10 +256,23 @@ jobs:
 | **Pro** | $5/month | Professional developers |
 | **Team** | $20/month | Teams & organizations |
 
-Get Pro at [gitmoji-ai.dev/pricing](https://gitmoji-ai.dev/pricing)
+**3 steps to Pro:**
 
 ```bash
-# Activate Pro
+# 1. Sponsor the project
+# 👉 https://github.com/sponsors/sochiautoparts
+
+# 2. Link your GitHub account
+gmai pro login <your-github-pat>
+# (Create PAT: github.com/settings/tokens/new?scopes=read:user)
+
+# 3. Done! Pro is active ✅
+gmai pro status
+```
+
+**Or use a license key:**
+
+```bash
 gmai pro activate YOUR-LICENSE-KEY
 ```
 
