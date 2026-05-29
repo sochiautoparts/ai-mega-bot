@@ -75,12 +75,12 @@ PLANS: Dict[str, Plan] = {
 # ── AI Provider Priority Chains ──────────────────────────────
 # Pollinations is FREE and always available (no key needed) — serves as the ultimate fallback
 PROVIDER_CHAINS: Dict[str, List[str]] = {
-    "text": ["groq", "cerebras", "openrouter", "github_models", "gemini", "huggingface", "pollinations"],
-    "image": ["pollinations", "huggingface_img", "prodia"],
+    "text": ["pollinations", "groq", "cerebras", "openrouter", "github_models", "gemini", "huggingface"],
+    "image": ["pollinations", "prodia", "huggingface_img"],
     "audio_stt": ["groq_whisper", "huggingface_whisper"],
     "audio_tts": ["huggingface_tts"],
-    "translate": ["gemini", "groq", "cerebras", "huggingface_nllb", "pollinations"],
-    "code": ["groq", "cerebras", "openrouter", "github_models", "pollinations"],
+    "translate": ["pollinations", "gemini", "groq", "cerebras", "huggingface_nllb"],
+    "code": ["pollinations", "groq", "cerebras", "openrouter", "github_models"],
 }
 
 # ── Provider Timeouts (seconds) ─────────────────────────────

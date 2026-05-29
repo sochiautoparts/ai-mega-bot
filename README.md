@@ -48,16 +48,18 @@ ai-mega-bot/
 
 ## 🤖 AI Провайдеры
 
-| Провайдер | Тип | Лимит | Модели |
-|-----------|-----|-------|--------|
-| Groq | Текст | 14 400/день | Llama 3.3 70B, Mixtral 8x7B |
-| OpenRouter | Текст | 10 000/день | DeepSeek V4, Llama 3.1 8B |
-| GitHub Models | Текст | 200/день | GPT-4o mini, Mistral Large |
-| Gemini | Текст | 1 500/день | Gemini 2.0 Flash |
-| Pollinations | Изображения | ∞ | Flux |
-| HuggingFace | Мультимедиа | 5 000/день | Whisper, Bark, NLLB-200 |
+| Провайдер | Тип | Лимит | Ключ |
+|-----------|-----|-------|------|
+| **Pollinations** | Текст + Изображения | ∞ | Не нужен! |
+| Groq | Текст + Whisper | 14 400/день | Нужен |
+| OpenRouter | Текст | 10 000/день | Нужен |
+| GitHub Models | Текст | 200/день | Нужен |
+| Gemini | Текст + Перевод | 1 500/день | Нужен |
+| Cerebras | Текст | 1 000 000/день | Нужен |
+| HuggingFace | Мультимедиа | 5 000/день | Нужен |
 
-**Суммарно: 16 000+ текстовых запросов/день бесплатно!**
+**Pollinations работает без ключа — бот запускается сразу!**
+Другие провайдеры подключаются при наличии ключей для увеличения лимитов.
 
 ## 🚀 Запуск
 
@@ -73,19 +75,23 @@ python -m bot.main
 2. Добавьте секреты (Settings → Secrets)
 3. Запустите workflow `run-bot.yml`
 
-## 🔑 Обязательные секреты GitHub
+## 🔑 Секреты GitHub
 
-| Секрет | Описание |
-|--------|----------|
-| `BOT_TOKEN` | Токен от @BotFather |
-| `ADMIN_IDS` | Telegram ID админов (через запятую) |
-| `GROQ_API_KEY` | API ключ Groq (бесплатно на groq.com) |
-| `OPENROUTER_API_KEY` | API ключ OpenRouter (бесплатно) |
-| `GH_GITHUB_TOKEN` | GitHub PAT для GitHub Models |
-| `GEMINI_API_KEY` | Google AI API ключ |
-| `HF_TOKEN` | HuggingFace Access Token |
-| `GH_PAT_TOKEN` | GitHub PAT для keep-alive (actions:write) |
-| `API_SECRET` | Секрет для REST API |
+| Секрет | Описание | Обязательный |
+|--------|----------|-------------|
+| `BOT_TOKEN` | Токен от @BotFather | ✅ Да |
+| `OWNER_ID` | Telegram ID владельца | ✅ Да |
+| `ADMIN_IDS` | Telegram ID админов | ✅ Да |
+| `GH_PAT_TOKEN` | GitHub PAT для keep-alive | ✅ Да |
+| `API_SECRET` | Секрет для REST API | ✅ Да |
+| `GROQ_API_KEY` | API ключ Groq | ❌ Опционально |
+| `OPENROUTER_API_KEY` | API ключ OpenRouter | ❌ Опционально |
+| `GITHUB_TOKEN` | GitHub PAT для Models | ❌ Опционально |
+| `GEMINI_API_KEY` | Google AI API ключ | ❌ Опционально |
+| `HF_TOKEN` | HuggingFace Access Token | ❌ Опционально |
+| `CEREBRAS_API_KEY` | Cerebras API ключ | ❌ Опционально |
+
+> **Бот работает сразу с Pollinations (без ключей).** Дополнительные ключи увеличивают скорость и лимиты.
 
 ## 💰 Монетизация
 

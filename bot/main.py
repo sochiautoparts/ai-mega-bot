@@ -98,16 +98,16 @@ async def on_startup(**kwargs) -> None:
 
     # Store in dispatcher workflow_data for handler access
     # In aiogram 3.x, workflow_data is passed to handlers as kwargs
-    dp_ref = kwargs.get("dispatcher")
+    dp_ref = kwargs.get("dispatcher") or kwargs.get("router") or dp
     if dp_ref:
         dp_ref.workflow_data["db"] = db
         dp_ref.workflow_data["ai_router"] = ai_router
         dp_ref.workflow_data["start_time"] = _start_time
+        logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
+    else:
+        logger.error("Could not set workflow_data — dispatcher not found in kwargs!")
 
-    # Also store on bot object via setattr (for easy handler access)
-    if bot:
-        setattr(bot, "_db", db)
-        setattr(bot, "_ai_router", ai_router)
+    # NOTE: Cannot use setattr on Bot object — use workflow_data instead
 
     # Send startup notification to admins
     if bot:
@@ -331,11 +331,18 @@ async def main():
     except SystemExit:
         logger.info("Bot stopped due to session timeout")
     except Exception as e:
-        logger.critical(f"Bot polling error: {e}")
+        logger.critical(f"Bot polling error: {e}", exc_info=True)
     finally:
-        timeout_task.cancel() if 'timeout_task' in dir() else None
+        try:
+            if 'timeout_task' in dir() and timeout_task:
+                timeout_task.cancel()
+        except Exception:
+            pass
         await on_shutdown()
-        await bot.session.close()
+        try:
+            await bot.session.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

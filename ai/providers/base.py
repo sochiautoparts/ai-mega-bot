@@ -74,6 +74,11 @@ class BaseProvider:
         """Translate text."""
         raise NotImplementedError
 
+    # Providers that work without API keys
+    NO_KEY_PROVIDERS = {"pollinations", "prodia"}
+
     def is_available(self) -> bool:
         """Check if provider has required credentials."""
-        return bool(self.api_key) or self.name == "pollinations"
+        if self.name in self.NO_KEY_PROVIDERS:
+            return True
+        return bool(self.api_key)
