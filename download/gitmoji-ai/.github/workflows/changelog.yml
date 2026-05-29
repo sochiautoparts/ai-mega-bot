@@ -1,0 +1,47 @@
+name: GitMoji AI — Auto Changelog
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.2.0)'
+        required: false
+        default: 'Unreleased'
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install GitMoji AI
+        run: pip install gitmoji-ai
+
+      - name: Generate Changelog
+        env:
+          GMAI_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          gmai changelog \
+            --version "${{ github.event.inputs.version || 'Unreleased' }}" \
+            --output CHANGELOG.md \
+            --format keepachangelog
+
+      - name: Commit Changelog
+        run: |
+          git config user.name "gitmoji-ai[bot]"
+          git config user.email "bot@gitmoji-ai.dev"
+          git add CHANGELOG.md
+          git diff --staged --quiet || git commit -m "📝 docs: update CHANGELOG.md [skip ci]"
+          git push
