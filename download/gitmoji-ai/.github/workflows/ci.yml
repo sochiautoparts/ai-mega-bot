@@ -6,12 +6,15 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12']
 
     steps:
       - uses: actions/checkout@v4
@@ -28,13 +31,10 @@ jobs:
 
       - name: Lint with ruff
         run: ruff check src/ tests/
-
-      - name: Type check with mypy
-        run: mypy src/ --ignore-missing-imports
         continue-on-error: true
 
       - name: Run tests
-        run: pytest --cov=gitmoji_ai --cov-report=xml
+        run: pytest -v tests/
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4

@@ -16,6 +16,7 @@ permissions:
 jobs:
   changelog:
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,12 +37,12 @@ jobs:
           gmai changelog \
             --version "${{ github.event.inputs.version || 'Unreleased' }}" \
             --output CHANGELOG.md \
-            --format keepachangelog
+            --no-ai
 
       - name: Commit Changelog
         run: |
           git config user.name "gitmoji-ai[bot]"
           git config user.email "bot@gitmoji-ai.dev"
           git add CHANGELOG.md
-          git diff --staged --quiet || git commit -m "📝 docs: update CHANGELOG.md [skip ci]"
+          git diff --staged --quiet || git commit -m "docs: update CHANGELOG.md [skip ci]"
           git push
