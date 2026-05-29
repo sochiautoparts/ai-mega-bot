@@ -1,13 +1,24 @@
 """
 Usage tracking — Free tier limits and Pro license validation
+Supports StarsPay API for real license validation
 """
 
 import sqlite3
 import time
+import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 
+import httpx
+
 from gitmoji_ai.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+# StarsPay API configuration
+STARSPAY_API_URL = "https://starspay.example.com"  # Replace with your server
+STARSPAY_API_KEY = ""  # Set via GMAI_STARSPAY_API_KEY env var
+PRODUCT_ID = "gitmoji-ai"
 
 
 def _get_db() -> sqlite3.Connection:
@@ -28,6 +39,7 @@ def _get_db() -> sqlite3.Connection:
             key TEXT PRIMARY KEY,
             activated_at REAL,
             expires_at REAL,
+            plan_id TEXT DEFAULT 'pro',
             email TEXT DEFAULT '',
             active INTEGER DEFAULT 1
         )
@@ -81,20 +93,87 @@ def check_limit(action: str) -> tuple[bool, int]:
     return used < limit, remaining
 
 
+def validate_license_via_api(key: str, product_id: str = PRODUCT_ID) -> dict:
+    """
+    Validate a license key via StarsPay API.
+    Returns: {"valid": bool, "plan_id": str, "expires_at": float, ...}
+    """
+    api_url = getattr(settings_instance(), 'starspay_api_url', STARSPAY_API_URL)
+    api_key = getattr(settings_instance(), 'starspay_api_key', STARSPAY_API_KEY)
+
+    try:
+        response = httpx.get(
+            f"{api_url}/api/v1/validate",
+            params={"key": key, "product": product_id},
+            headers={"X-API-Key": api_key},
+            timeout=10,
+        )
+        if response.status_code == 200:
+            return response.json()
+    except Exception as e:
+        logger.warning(f"API validation failed, falling back to local: {e}")
+
+    # Fallback: local validation
+    return _local_validate(key)
+
+
+def _local_validate(key: str) -> dict:
+    """Local fallback validation"""
+    if not key or len(key) < 10:
+        return {"valid": False, "reason": "invalid_format"}
+
+    if not key.startswith("SP-"):
+        return {"valid": False, "reason": "invalid_prefix"}
+
+    conn = _get_db()
+    cursor = conn.execute(
+        "SELECT * FROM license WHERE key = ? AND active = 1 AND expires_at > ?",
+        (key, time.time()),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "valid": True,
+            "plan_id": row["plan_id"] if "plan_id" in row.keys() else "pro",
+            "expires_at": row["expires_at"],
+        }
+    return {"valid": False, "reason": "not_found"}
+
+
+def settings_instance():
+    """Get settings instance (avoid circular import issues)"""
+    return get_settings()
+
+
 def activate_license(key: str, email: str = "") -> bool:
-    """Activate a Pro license key"""
-    # In production, validate against API
-    # For now, accept any non-empty key
+    """
+    Activate a Pro license key.
+    Validates against StarsPay API first, then saves locally.
+    """
     if not key or len(key) < 10:
         return False
 
+    # Validate via StarsPay API
+    result = validate_license_via_api(key)
+
+    if not result.get("valid"):
+        # Also try local validation for offline/cached keys
+        local = _local_validate(key)
+        if not local.get("valid"):
+            return False
+        result = local
+
+    # Save locally
     conn = _get_db()
     now = time.time()
-    expires = now + (365 * 86400)  # 1 year
+    expires_at = result.get("expires_at", now + (30 * 86400))
+    plan_id = result.get("plan_id", "pro")
 
     conn.execute(
-        "INSERT OR REPLACE INTO license (key, activated_at, expires_at, email, active) VALUES (?, ?, ?, ?, 1)",
-        (key, now, expires, email),
+        "INSERT OR REPLACE INTO license (key, activated_at, expires_at, plan_id, email, active) VALUES (?, ?, ?, ?, ?, 1)",
+        (key, now, expires_at, plan_id, email),
     )
     conn.commit()
     conn.close()
@@ -102,7 +181,7 @@ def activate_license(key: str, email: str = "") -> bool:
 
 
 def check_license_valid() -> bool:
-    """Check if current license is valid"""
+    """Check if current license is valid (local check)"""
     settings = get_settings()
     if not settings.pro_license_key:
         return False
@@ -117,6 +196,39 @@ def check_license_valid() -> bool:
     return row is not None
 
 
+def check_license_with_api() -> dict:
+    """
+    Full license check via API + local.
+    Returns detailed info about the license status.
+    """
+    settings = get_settings()
+    key = settings.pro_license_key
+
+    if not key:
+        return {"valid": False, "reason": "no_key", "tier": "free"}
+
+    # Try API first
+    result = validate_license_via_api(key)
+
+    if result.get("valid"):
+        return {
+            "valid": True,
+            "tier": result.get("plan_id", "pro"),
+            "expires_at": result.get("expires_at"),
+            "source": "api"
+        }
+
+    # Fallback to local
+    if check_license_valid():
+        return {
+            "valid": True,
+            "tier": "pro",
+            "source": "local_cache"
+        }
+
+    return {"valid": False, "reason": result.get("reason", "expired"), "tier": "free"}
+
+
 def get_usage_stats() -> dict:
     """Get usage statistics"""
     return {
@@ -125,4 +237,5 @@ def get_usage_stats() -> dict:
         "commit_limit": get_settings().free_commits_per_month,
         "changelog_limit": get_settings().free_changelog_per_month,
         "is_pro": get_settings().is_pro,
+        "license_status": check_license_with_api(),
     }

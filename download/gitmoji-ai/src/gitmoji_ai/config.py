@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     pro_license_key: str = ""
     pro_api_url: str = "https://api.gitmoji-ai.dev/v1"
 
+    # StarsPay integration
+    starspay_api_url: str = "https://starspay.example.com"
+    starspay_api_key: str = ""
+
     # Git defaults
     default_language: str = "en"  # en, ru, es, de, fr, ja, zh
     commit_style: str = "conventional"  # conventional, emoji, plain
