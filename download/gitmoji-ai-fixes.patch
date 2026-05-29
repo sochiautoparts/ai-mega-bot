@@ -1,0 +1,1960 @@
+From e8b3a134b5a4430de3fab7d517a71bf5fc817d9c Mon Sep 17 00:00:00 2001
+From: sochiautoparts <sochiautoparts@users.noreply.github.com>
+Date: Fri, 29 May 2026 18:55:19 +0000
+Subject: [PATCH] fix: resolve all critical security issues and implement real
+ Pro features
+
+CRITICAL FIXES:
+1. Paywall bypass: removed is_pro property from Settings, all Pro checks
+   now go through is_pro() function in usage.py which does real verification
+2. Rate limiting: suggest_commit() now calls check_limit() before generating,
+   free tier gets watermark appended to messages
+3. Languages: added complete native system prompts for all 7 languages
+   (EN, RU, ES, DE, FR, JA, ZH) instead of English-only with tag
+4. Custom commit styles: implemented 5 style profiles - conventional,
+   emoji, plain (free), semantic-release and gitmoji-dict (Pro only)
+5. Team features: added .gitmoji-ai-team.yml support with team init/check
+   commands, commit validation against team rules
+6. OAuth Client ID: moved from hardcoded value to GITHUB_CLIENT_ID env var
+7. Auth file security: save_github_token() now sets file permissions to 0o600
+8. Action files: removed duplicate action/action.yml, consolidated to root
+   action.yml with license-key input and non-destructive suggest mode
+9. Device flow: implemented real GitHub Device Flow authentication with
+   proper code display, polling, and PAT fallback when no client ID
+
+PRO FEATURES IMPLEMENTED:
+- Custom commit styles: semantic-release and gitmoji-dict with detailed prompts
+- Team config: .gitmoji-ai-team.yml with team conventions + gmai team init/check
+- All 7 languages with complete native system prompts
+- Priority support: gmai support command generates debug info template
+
+OTHER CHANGES:
+- Updated README.md: removed Coming Soon, documented all real features
+- Updated docs/index.html: shows real Pro features, commit styles, languages
+- Added pyyaml dependency for team config YAML parsing
+- Added 44 tests covering all new functionality
+- Changelog now supports all 7 languages with native prompts
+---
+ README.md                   | 177 +++++++++++++++++++++-------
+ action.yml                  |   8 +-
+ action/action.yml           |  68 -----------
+ docs/index.html             |  89 +++++++++++++-
+ pyproject.toml              |   1 +
+ src/gitmoji_ai/ai_engine.py | 229 +++++++++++++++++++++++++++++++++++-
+ src/gitmoji_ai/changelog.py |  78 +++++++++++-
+ src/gitmoji_ai/cli.py       | 195 ++++++++++++++++++++++++++++--
+ src/gitmoji_ai/config.py    |   5 -
+ src/gitmoji_ai/sponsors.py  | 163 ++++++++++++++++++++-----
+ src/gitmoji_ai/suggest.py   |  14 ++-
+ src/gitmoji_ai/team.py      | 223 +++++++++++++++++++++++++++++++++++
+ src/gitmoji_ai/usage.py     |   4 +-
+ tests/test_core.py          | 168 +++++++++++++++++++++++++-
+ 14 files changed, 1254 insertions(+), 168 deletions(-)
+ delete mode 100644 action/action.yml
+ create mode 100644 src/gitmoji_ai/team.py
+
+diff --git a/README.md b/README.md
+index 7005bf5..07576d8 100644
+--- a/README.md
++++ b/README.md
+@@ -58,12 +58,14 @@ Select commit [1/2/3/e(q)dit/(q)uit]: 1
+ | AI changelog generation | 3/month | ∞ |
+ | Conventional Commits | ✅ | ✅ |
+ | Emoji commits | ✅ | ✅ |
+-| Multi-language (EN, RU) | ✅ | ✅ |
++| Multi-language (7 languages) | ✅ | ✅ |
+ | Git hook integration | ✅ | ✅ |
+ | GitHub Action | ✅ | ✅ |
+ | No watermark | ❌ | ✅ |
+-| Custom commit styles | ❌ | 🔜 Coming Soon |
+-| Team features | ❌ | 🔜 Coming Soon |
++| Custom commit styles | ✅ (3 styles) | ✅ (5 styles) |
++| Semantic Release style | ❌ | ✅ |
++| GitMoji Dictionary style | ❌ | ✅ |
++| Team features | ❌ | ✅ |
+ | Priority support | ❌ | ✅ |
+ 
+ ---
+@@ -127,8 +129,8 @@ gmai changelog --version v1.2.0
+ # Output to file
+ gmai changelog --version v1.2.0 --output CHANGELOG.md
+ 
+-# Russian language
+-gmai changelog --version v1.2.0 --lang ru
++# Spanish language
++gmai changelog --version v1.2.0 --lang es
+ ```
+ 
+ ---
+@@ -141,21 +143,33 @@ gmai changelog --version v1.2.0 --lang ru
+ | `gmai changelog` | 📝 Generate AI changelog |
+ | `gmai init` | 🔧 Initialize GitMoji AI in repo |
+ | `gmai info` | 📊 Show repo info & usage stats |
++| `gmai suggest` | 💡 Quick suggest (for hooks, non-interactive) |
++| `gmai team init` | 👥 Create team config file |
++| `gmai team check` | 👥 Check commits against team rules |
++| `gmai support` | 🆘 Create a support request with debug info |
+ | `gmai pro activate KEY` | ⭐ Activate Pro license |
+ | `gmai pro status` | 🔍 Check Pro license status |
+ | `gmai pro purchase` | 💳 Get Pro license |
++| `gmai pro login` | 🔐 Login via GitHub Sponsors |
+ 
+ ### Commit options
+ 
+ ```bash
+-gmai commit --style emoji       # Emoji-style commits: ✨ add login
+-gmai commit --style plain       # Plain: add login functionality
+-gmai commit --style conventional # Conventional: feat(auth): add login (default)
+-gmai commit --lang ru           # Russian: feat(auth): добавить логин
+-gmai commit --stage             # Auto-stage all changes
+-gmai commit --sign              # GPG-sign the commit
+-gmai commit --yes               # Skip confirmation, use first suggestion
+-gmai commit --path ./my-repo    # Specify repo path
++gmai commit --style conventional    # Conventional: feat(auth): add login (default)
++gmai commit --style emoji           # Emoji-style: ✨ add login
++gmai commit --style plain           # Plain: Add login functionality
++gmai commit --style semantic-release # Semantic Release: feat(api)!: change auth (Pro)
++gmai commit --style gitmoji-dict    # GitMoji Dictionary: 🌐 add Spanish translation (Pro)
++gmai commit --lang ru               # Russian: feat(auth): добавить логин
++gmai commit --lang es               # Spanish: feat(auth): añadir login
++gmai commit --lang de               # German: feat(auth): login hinzufügen
++gmai commit --lang fr               # French: feat(auth): ajouter le login
++gmai commit --lang ja               # Japanese: feat(auth): ログインを追加
++gmai commit --lang zh               # Chinese: feat(auth): 添加登录
++gmai commit --stage                 # Auto-stage all changes
++gmai commit --sign                  # GPG-sign the commit
++gmai commit --yes                   # Skip confirmation, use first suggestion
++gmai commit --path ./my-repo        # Specify repo path
+ ```
+ 
+ ### Changelog options
+@@ -163,12 +177,78 @@ gmai commit --path ./my-repo    # Specify repo path
+ ```bash
+ gmai changelog --version v2.0.0          # Version tag
+ gmai changelog --format angular          # Angular format
+-gmai changelog --lang ru                 # Russian changelog
++gmai changelog --lang es                 # Spanish changelog
+ gmai changelog --since v1.0.0            # Only changes since tag
+ gmai changelog --no-ai                   # Manual grouping (no AI)
+ gmai changelog --output CHANGELOG.md     # Write to file
+ ```
+ 
++### Team features
++
++```bash
++# Create team config
++gmai team init
++
++# Check if recent commits comply with team rules
++gmai team check
++```
++
++The team config (`.gitmoji-ai-team.yml`) can be committed to the repo so all team members follow the same rules:
++
++```yaml
++# .gitmoji-ai-team.yml
++required_types: [feat, fix, docs, chore]   # Only these types allowed
++required_scopes: [api, ui, auth]            # Enforce scope usage
++max_subject_length: 72                       # Limit subject line
++require_scope: true                          # Scope is mandatory
++commit_style: conventional                  # Team-wide style
++language: en                                 # Team-wide language
++disallowed_types: [poo]                      # Ban certain types
++```
++
++---
++
++## 🎨 Commit Styles
++
++| Style | Format | Example | Pro Only |
++|-------|--------|---------|:--------:|
++| `conventional` | `type(scope): desc` | `feat(auth): add JWT validation` | ❌ |
++| `emoji` | `emoji desc` | `✨ add JWT validation` | ❌ |
++| `plain` | `Description` | `Add JWT validation` | ❌ |
++| `semantic-release` | `type(scope)!: desc` | `feat(api)!: change auth response` | ✅ |
++| `gitmoji-dict` | `emoji desc` | `🌐 add Spanish translation` | ✅ |
++
++### Semantic Release style (Pro)
++Follows [semantic-release](https://semantic-release.gitbook.io/) conventions:
++- `feat:` → triggers MINOR release
++- `fix:` → triggers PATCH release  
++- `feat!:` or `fix!:` → triggers MAJOR release
++- `BREAKING CHANGE:` in body
++
++### GitMoji Dictionary style (Pro)
++Uses the full [gitmoji](https://gitmoji.dev/) dictionary with 30+ specific emojis:
++- 🌐 i18n/translations
++- ♿ accessibility
++- 📈 analytics
++- 🔒 security
++- 🐳 docker
++- 💄 UI/cosmetics
++- And many more...
++
++---
++
++## 🌍 Multi-language Support
++
++| Language | Flag | Example |
++|----------|------|---------|
++| English | 🇬🇧 | `feat(auth): add login validation` |
++| Russian | 🇷🇺 | `feat(auth): добавить валидацию логина` |
++| Spanish | 🇪🇸 | `feat(auth): añadir validación de login` |
++| German | 🇩🇪 | `feat(auth): login-validierung hinzufügen` |
++| French | 🇫🇷 | `feat(auth): ajouter la validation du login` |
++| Japanese | 🇯🇵 | `feat(auth): ログイン検証を追加` |
++| Chinese | 🇨🇳 | `feat(auth): 添加登录验证` |
++
+ ---
+ 
+ ## 🤖 GitHub Action
+@@ -190,9 +270,10 @@ jobs:
+         with:
+           fetch-depth: 0
+ 
+-      - uses: sochiautoparts/gitmoji-ai/action@v1
++      - uses: sochiautoparts/gitmoji-ai@v1
+         with:
+           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
++          license-key: ${{ secrets.LICENSE_KEY }}
+           generate-changelog: true
+           version: v1.2.0
+           language: en
+@@ -214,36 +295,24 @@ jobs:
+         with:
+           fetch-depth: 0
+ 
+-      - uses: sochiautoparts/gitmoji-ai/action@v1
++      - uses: sochiautoparts/gitmoji-ai@v1
+         with:
+           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
++          license-key: ${{ secrets.LICENSE_KEY }}
+           language: en
+ ```
+ 
+ ---
+ 
+-## 🌍 Multi-language Support
+-
+-| Language | Flag | Example |
+-|----------|------|---------|
+-| English | 🇬🇧 | `feat(auth): add login validation` |
+-| Russian | 🇷🇺 | `feat(auth): добавить валидацию логина` |
+-| Spanish | 🇪🇸 | `feat(auth): añadir validación de login` |
+-| German | 🇩🇪 | `feat(auth): login-validierung hinzufügen` |
+-| French | 🇫🇷 | `feat(auth): ajouter la validation du login` |
+-| Japanese | 🇯🇵 | `feat(auth): ログイン検証を追加` |
+-| Chinese | 🇨🇳 | `feat(auth): 添加登录验证` |
+-
+----
+-
+ ## ⭐ Pro Version & StarsPay
+ 
+ ### Why upgrade?
+ 
+ - **∞ Unlimited** AI commits and changelogs
+ - **No watermark** — clean commit history
+-- **Custom styles** — create your own commit format
+-- **Team features** — shared settings and changelogs
++- **5 commit styles** — including semantic-release and gitmoji-dict
++- **Team features** — shared settings via `.gitmoji-ai-team.yml`
++- **7 languages** — with proper native language prompts
+ - **Priority support** — faster responses
+ 
+ ### 💳 StarsPay — Pay with Telegram Stars
+@@ -299,7 +368,7 @@ If the JSON method doesn't validate and `STARSPAY_API_URL` is configured, the to
+ - **Header:** `X-API-Key: {STARSPAY_API_KEY}`
+ - **Body:** `{"key": "<license_key>"}`
+ 
+-The `is_pro()` function caches verification results for 1 hour in memory and also saves to local SQLite for offline use.
++The `is_pro()` function caches verification results for 1 hour in memory and also saves to local SQLite for offline use (7-day max).
+ 
+ ### Environment Variables for CI/CD
+ 
+@@ -309,11 +378,13 @@ For automated environments (GitHub Actions, Docker, etc.):
+ LICENSE_KEY=SP-GMA-xxxxxxxx                                   # Your license key (required for Pro)
+ STARSPAY_API_URL=                                              # Optional: StarsPay API URL (empty = JSON-only verification)
+ STARSPAY_API_KEY=                                              # Optional: StarsPay API key (only if using API fallback)
++GITHUB_CLIENT_ID=                                              # Optional: GitHub OAuth App client ID for device flow login
+ ```
+ 
+ - **LICENSE_KEY** — Your Pro license key. If set, the tool verifies it via the public JSON file (primary) or REST API (fallback).
+ - **STARSPAY_API_URL** — Optional. If set, the REST API is used as a fallback when JSON verification doesn't find the key.
+ - **STARSPAY_API_KEY** — Optional. API key for the REST API (only needed if `STARSPAY_API_URL` is set).
++- **GITHUB_CLIENT_ID** — Optional. If set, enables interactive GitHub Device Flow login via `gmai pro login`.
+ - If only `LICENSE_KEY` is set, verification uses the public GitHub JSON — **no API server required!**
+ 
+ ---
+@@ -327,17 +398,40 @@ Create `.env` in your project root (or set environment variables):
+ GMAI_OPENAI_API_KEY=sk-your-key-here
+ 
+ # Optional
+-GMAI_DEFAULT_LANGUAGE=en          # Default commit language
+-GMAI_COMMIT_STYLE=conventional    # Default commit style
++GMAI_DEFAULT_LANGUAGE=en          # Default commit language (en, ru, es, de, fr, ja, zh)
++GMAI_COMMIT_STYLE=conventional    # Default commit style (conventional, emoji, plain, semantic-release, gitmoji-dict)
+ GMAI_OPENAI_MODEL=gpt-4o-mini    # AI model
+-GMAI_PRO_LICENSE_KEY=             # Pro license key
+ 
+ # StarsPay license verification
+ LICENSE_KEY=                      # License key for Pro features (primary: verified via public GitHub JSON)
+ STARSPAY_API_URL=                 # Optional: StarsPay API URL (empty = JSON-only verification)
+ STARSPAY_API_KEY=                 # Optional: StarsPay API key
++
++# GitHub Device Flow (optional, for interactive login)
++GITHUB_CLIENT_ID=                 # GitHub OAuth App client ID
+ ```
+ 
++### Team Configuration
++
++Create `.gitmoji-ai-team.yml` in your repo root:
++
++```yaml
++# .gitmoji-ai-team.yml — commit this file to share team conventions
++required_types: [feat, fix, docs, chore]
++required_scopes: [api, ui, auth]
++max_subject_length: 72
++require_scope: false
++disallowed_types: []
++commit_style: conventional
++language: en
++changelog_format: keepachangelog
++```
++
++When this file exists, `gmai commit` will:
++- Use team's default style and language
++- Validate commit messages against team rules
++- Warn about violations before committing
++
+ ### Git Hook
+ 
+ After `gmai init`, every `git commit` will show AI suggestions in your editor:
+@@ -357,14 +451,15 @@ Just uncomment the line you like, save, and close the editor!
+ gitmoji-ai/
+ ├── src/gitmoji_ai/
+ │   ├── cli.py          # Typer CLI interface
+-│   ├── ai_engine.py    # AI commit generation (OpenAI)
++│   ├── ai_engine.py    # AI commit generation (OpenAI) + 7 language prompts + 5 styles
+ │   ├── git_ops.py      # Git operations (diff, commit)
+-│   ├── changelog.py    # Changelog generator
++│   ├── changelog.py    # Changelog generator (7 languages)
+ │   ├── config.py       # Configuration management
+ │   ├── usage.py        # Usage tracking & license validation (JSON + API)
+-│   └── suggest.py      # Quick suggest (for hooks)
+-├── action/
+-│   └── action.yml      # GitHub Action
++│   ├── suggest.py      # Quick suggest (for hooks) with rate limiting
++│   ├── sponsors.py     # GitHub Sponsors + Device Flow auth
++│   └── team.py         # Team config (.gitmoji-ai-team.yml)
++├── action.yml          # GitHub Action (canonical)
+ ├── .github/workflows/
+ │   ├── ci.yml          # CI pipeline
+ │   └── changelog.yml   # Auto changelog
+diff --git a/action.yml b/action.yml
+index cdb878e..263c9ca 100644
+--- a/action.yml
++++ b/action.yml
+@@ -10,12 +10,16 @@ inputs:
+     description: 'OpenAI API key for AI commit generation'
+     required: false
+     default: ''
++  license-key:
++    description: 'Pro license key for unlimited usage (optional)'
++    required: false
++    default: ''
+   language:
+     description: 'Commit message language (en, ru, es, de, fr, ja, zh)'
+     required: false
+     default: 'en'
+   style:
+-    description: 'Commit style: conventional, emoji, or plain'
++    description: 'Commit style: conventional, emoji, plain, semantic-release (Pro), gitmoji-dict (Pro)'
+     required: false
+     default: 'conventional'
+   model:
+@@ -54,6 +58,7 @@ runs:
+         GMAI_DEFAULT_LANGUAGE: ${{ inputs.language }}
+         GMAI_COMMIT_STYLE: ${{ inputs.style }}
+         GMAI_OPENAI_MODEL: ${{ inputs.model }}
++        LICENSE_KEY: ${{ inputs.license-key }}
+       run: |
+         echo "🤖 GitMoji AI: Analyzing changes..."
+         gmai info
+@@ -73,6 +78,7 @@ runs:
+       env:
+         GMAI_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+         GMAI_DEFAULT_LANGUAGE: ${{ inputs.language }}
++        LICENSE_KEY: ${{ inputs.license-key }}
+       run: |
+         echo "📝 Generating changelog..."
+         gmai changelog --version "${{ inputs.version }}" --format "${{ inputs.changelog-format }}" --output CHANGELOG.md
+diff --git a/action/action.yml b/action/action.yml
+deleted file mode 100644
+index ef133d7..0000000
+--- a/action/action.yml
++++ /dev/null
+@@ -1,68 +0,0 @@
+-name: 'GitMoji AI — Auto Commit Messages'
+-description: '🤖 AI-powered commit messages for your PRs and pushes'
+-branding:
+-  icon: 'git-commit'
+-  color: 'green'
+-
+-inputs:
+-  openai-api-key:
+-    description: 'OpenAI API key for AI commit generation'
+-    required: false
+-    default: ''
+-  language:
+-    description: 'Commit message language (en, ru, es, de, fr)'
+-    required: false
+-    default: 'en'
+-  style:
+-    description: 'Commit style (conventional, emoji, plain)'
+-    required: false
+-    default: 'conventional'
+-  model:
+-    description: 'OpenAI model to use'
+-    required: false
+-    default: 'gpt-4o-mini'
+-  generate-changelog:
+-    description: 'Also generate/update CHANGELOG.md'
+-    required: false
+-    default: 'false'
+-  version:
+-    description: 'Version tag for changelog (e.g., v1.2.0)'
+-    required: false
+-    default: 'Unreleased'
+-
+-runs:
+-  using: 'composite'
+-  steps:
+-    - name: Set up Python
+-      uses: actions/setup-python@v5
+-      with:
+-        python-version: '3.12'
+-
+-    - name: Install GitMoji AI
+-      shell: bash
+-      run: pip install gitmoji-ai
+-
+-    - name: Generate commit suggestions
+-      shell: bash
+-      env:
+-        GMAI_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+-        GMAI_DEFAULT_LANGUAGE: ${{ inputs.language }}
+-        GMAI_COMMIT_STYLE: ${{ inputs.style }}
+-        GMAI_OPENAI_MODEL: ${{ inputs.model }}
+-      run: |
+-        echo "🤖 GitMoji AI: Analyzing changes..."
+-        gmai info
+-        echo ""
+-        echo "💡 Suggested commit messages:"
+-        gmai commit --yes 2>/dev/null || echo "No staged changes to analyze"
+-
+-    - name: Generate Changelog
+-      if: ${{ inputs.generate-changelog == 'true' }}
+-      shell: bash
+-      env:
+-        GMAI_OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+-        GMAI_DEFAULT_LANGUAGE: ${{ inputs.language }}
+-      run: |
+-        echo "📝 Generating changelog..."
+-        gmai changelog --version "${{ inputs.version }}" --output CHANGELOG.md
+-        echo "✅ CHANGELOG.md updated!"
+diff --git a/docs/index.html b/docs/index.html
+index ffcc9b1..583f6dc 100644
+--- a/docs/index.html
++++ b/docs/index.html
+@@ -43,14 +43,18 @@ description: Never write a bad commit message again. AI-powered commit messages
+ </pre>
+ </div>
+ 
+-<div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; margin-bottom: 50px;">
++<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 25px; margin-bottom: 50px;">
+ <div style="background: #f6f8fa; padding: 25px; border-radius: 12px;">
+ <h3>💬 AI Commits</h3>
+-<p>3 smart suggestions per diff. Conventional commits, emoji style, or plain. 6+ languages.</p>
++<p>3 smart suggestions per diff. 5 commit styles. 7 languages with native prompts.</p>
+ </div>
+ <div style="background: #f6f8fa; padding: 25px; border-radius: 12px;">
+ <h3>📝 Changelog</h3>
+-<p>Auto-generate beautiful changelogs grouped by type. Keep a Changelog or Angular format.</p>
++<p>Auto-generate beautiful changelogs grouped by type. 7 languages supported. Keep a Changelog or Angular format.</p>
++</div>
++<div style="background: #f6f8fa; padding: 25px; border-radius: 12px;">
++<h3>👥 Team Features</h3>
++<p>Shared commit conventions via <code>.gitmoji-ai-team.yml</code>. Enforce types, scopes, and subject length across your team.</p>
+ </div>
+ <div style="background: #f6f8fa; padding: 25px; border-radius: 12px;">
+ <h3>🔐 License Verification</h3>
+@@ -77,7 +81,8 @@ gmai init</code></pre>
+ <div style="background: #f6f8fa; padding: 25px; border-radius: 12px; margin-bottom: 20px;">
+ <h3>3️⃣ Use</h3>
+ <pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto;"><code>gmai commit --stage     # AI commit
+-gmai changelog -v v1.0   # AI changelog</code></pre>
++gmai changelog -v v1.0   # AI changelog
++gmai team init           # Team config</code></pre>
+ </div>
+ 
+ <div style="background: #f6f8fa; padding: 25px; border-radius: 12px; margin-bottom: 40px;">
+@@ -85,10 +90,66 @@ gmai changelog -v v1.0   # AI changelog</code></pre>
+ <pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 8px; overflow-x: auto;"><code>- uses: sochiautoparts/gitmoji-ai@v1
+   with:
+     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
++    license-key: ${{ secrets.LICENSE_KEY }}
+     generate-changelog: true
+     version: v1.2.0</code></pre>
+ </div>
+ 
++<div style="margin-bottom: 50px;">
++<h2 style="text-align: center;">🎨 Commit Styles</h2>
++<table style="margin: 0 auto; border-collapse: collapse; font-size: 1.05em; width: 100%; max-width: 700px;">
++<tr style="border-bottom: 2px solid #ddd;">
++<th style="padding: 12px; text-align: left;">Style</th>
++<th style="padding: 12px; text-align: left;">Example</th>
++<th style="padding: 12px;">Free</th>
++<th style="padding: 12px;">Pro</th>
++</tr>
++<tr style="border-bottom: 1px solid #eee;">
++<td style="padding: 10px;"><code>conventional</code></td>
++<td style="padding: 10px;">feat(auth): add JWT validation</td>
++<td style="padding: 10px; text-align: center;">✅</td>
++<td style="padding: 10px; text-align: center;">✅</td>
++</tr>
++<tr style="border-bottom: 1px solid #eee;">
++<td style="padding: 10px;"><code>emoji</code></td>
++<td style="padding: 10px;">✨ add JWT validation</td>
++<td style="padding: 10px; text-align: center;">✅</td>
++<td style="padding: 10px; text-align: center;">✅</td>
++</tr>
++<tr style="border-bottom: 1px solid #eee;">
++<td style="padding: 10px;"><code>plain</code></td>
++<td style="padding: 10px;">Add JWT validation</td>
++<td style="padding: 10px; text-align: center;">✅</td>
++<td style="padding: 10px; text-align: center;">✅</td>
++</tr>
++<tr style="border-bottom: 1px solid #eee;">
++<td style="padding: 10px;"><code>semantic-release</code></td>
++<td style="padding: 10px;">feat(api)!: change auth response</td>
++<td style="padding: 10px; text-align: center;">❌</td>
++<td style="padding: 10px; text-align: center; color: #2ea44f; font-weight: bold;">✅</td>
++</tr>
++<tr>
++<td style="padding: 10px;"><code>gitmoji-dict</code></td>
++<td style="padding: 10px;">🌐 add Spanish translation</td>
++<td style="padding: 10px; text-align: center;">❌</td>
++<td style="padding: 10px; text-align: center; color: #2ea44f; font-weight: bold;">✅</td>
++</tr>
++</table>
++</div>
++
++<div style="margin-bottom: 50px;">
++<h2 style="text-align: center;">🌍 7 Languages with Native Prompts</h2>
++<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-top: 20px;">
++<div style="background: #f6f8fa; padding: 15px; border-radius: 8px; text-align: center;">🇬🇧 English<br><small>feat(auth): add login</small></div>
++<div style="background: #f6f8fa; padding: 15px; border-radius: 8px; text-align: center;">🇷🇺 Русский<br><small>feat(auth): добавить логин</small></div>
++<div style="background: #f6f8fa; padding: 15px; border-radius: 8px; text-align: center;">🇪🇸 Español<br><small>feat(auth): añadir login</small></div>
++<div style="background: #f6f8fa; padding: 15px; border-radius: 8px; text-align: center;">🇩🇪 Deutsch<br><small>feat(auth): login hinzufügen</small></div>
++<div style="background: #f6f8fa; padding: 15px; border-radius: 8px; text-align: center;">🇫🇷 Français<br><small>feat(auth): ajouter le login</small></div>
++<div style="background: #f6f8fa; padding: 15px; border-radius: 8px; text-align: center;">🇯🇵 日本語<br><small>feat(auth): ログインを追加</small></div>
++<div style="background: #f6f8fa; padding: 15px; border-radius: 8px; text-align: center;">🇨🇳 中文<br><small>feat(auth): 添加登录</small></div>
++</div>
++</div>
++
+ <div style="text-align: center; margin-bottom: 40px;">
+ <h2>💰 Pricing — Pay with Telegram Stars ⭐</h2>
+ <table style="margin: 0 auto; border-collapse: collapse; font-size: 1.1em;">
+@@ -111,13 +172,31 @@ gmai changelog -v v1.0   # AI changelog</code></pre>
+ <td style="padding: 12px; color: #2ea44f;">Unlimited</td>
+ </tr>
+ <tr style="border-bottom: 1px solid #eee;">
++<td style="padding: 12px; text-align: left;">7 languages</td>
++<td style="padding: 12px;">✅</td>
++<td style="padding: 12px; color: #2ea44f;">✅</td>
++<td style="padding: 12px; color: #2ea44f;">✅</td>
++</tr>
++<tr style="border-bottom: 1px solid #eee;">
++<td style="padding: 12px; text-align: left;">5 commit styles</td>
++<td style="padding: 12px;">3 styles</td>
++<td style="padding: 12px; color: #2ea44f;">5 styles</td>
++<td style="padding: 12px; color: #2ea44f;">5 styles</td>
++</tr>
++<tr style="border-bottom: 1px solid #eee;">
+ <td style="padding: 12px; text-align: left;">No watermark</td>
+ <td style="padding: 12px;">❌</td>
+ <td style="padding: 12px; color: #2ea44f;">✅</td>
+ <td style="padding: 12px; color: #2ea44f;">✅</td>
+ </tr>
+ <tr style="border-bottom: 1px solid #eee;">
+-<td style="padding: 12px; text-align: left;">Custom styles</td>
++<td style="padding: 12px; text-align: left;">Team features</td>
++<td style="padding: 12px;">❌</td>
++<td style="padding: 12px; color: #2ea44f;">✅</td>
++<td style="padding: 12px; color: #2ea44f;">✅</td>
++</tr>
++<tr style="border-bottom: 1px solid #eee;">
++<td style="padding: 12px; text-align: left;">Priority support</td>
+ <td style="padding: 12px;">❌</td>
+ <td style="padding: 12px; color: #2ea44f;">✅</td>
+ <td style="padding: 12px; color: #2ea44f;">✅</td>
+diff --git a/pyproject.toml b/pyproject.toml
+index 8efa45e..29705e8 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -33,6 +33,7 @@ dependencies = [
+     "httpx>=0.25.0",
+     "pydantic>=2.0.0",
+     "pydantic-settings>=2.0.0",
++    "pyyaml>=6.0",
+ ]
+ 
+ [project.optional-dependencies]
+diff --git a/src/gitmoji_ai/ai_engine.py b/src/gitmoji_ai/ai_engine.py
+index 163e12e..749c6a5 100644
+--- a/src/gitmoji_ai/ai_engine.py
++++ b/src/gitmoji_ai/ai_engine.py
+@@ -57,6 +57,11 @@ CONVENTIONAL_TYPES = [
+     "test", "build", "ci", "chore", "revert"
+ ]
+ 
++# Available commit styles: conventional, emoji, plain (free)
++# semantic-release, gitmoji-dict (Pro only)
++AVAILABLE_STYLES = ["conventional", "emoji", "plain", "semantic-release", "gitmoji-dict"]
++PRO_ONLY_STYLES = ["semantic-release", "gitmoji-dict"]
++
+ 
+ @dataclass
+ class CommitSuggestion:
+@@ -139,7 +144,11 @@ def analyze_diff(diff_text: str) -> DiffAnalysis:
+     )
+ 
+ 
+-SYSTEM_PROMPT_COMMIT = """You are an expert at writing clear, concise, and conventional git commit messages.
++# ============================================================
++# System prompts for all 7 languages
++# ============================================================
++
++SYSTEM_PROMPT_COMMIT_EN = """You are an expert at writing clear, concise, and conventional git commit messages.
+ 
+ Rules:
+ 1. Follow Conventional Commits format: type(scope): description
+@@ -192,6 +201,209 @@ SYSTEM_PROMPT_COMMIT_RU = """Ты — эксперт по написанию п
+ Предложи 3 варианта: классический, с эмодзи, подробный.
+ """
+ 
++SYSTEM_PROMPT_COMMIT_ES = """Eres un experto en escribir mensajes de commit de git claros, concisos y convencionales.
++
++Reglas:
++1. Sigue el formato Conventional Commits: tipo(ámbito): descripción
++2. Tipos: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
++3. El ámbito es opcional pero recomendado (ejemplo: feat(auth): añadir inicio de sesión)
++4. Descripción: modo imperativo, minúsculas, sin punto, máximo 72 caracteres
++5. Cuerpo: explica POR QUÉ, no QUÉ (el diff muestra qué cambió)
++6. Sé específico, no genérico ("añadir validación de email" no "actualizar código")
++7. Si hay múltiples cambios lógicos, sugiere múltiples commits
++
++Formato de salida — arreglo JSON de sugerencias:
++[
++  {
++    "message": "tipo(ámbito): descripción",
++    "type": "feat",
++    "scope": "auth",
++    "description": "añadir validación de email al formulario de inicio de sesión",
++    "body": "Los usuarios podían enviar emails no válidos...",
++    "emoji": "✨",
++    "confidence": 0.95
++  }
++]
++
++Proporciona 3 variaciones: una convencional, una con emoji, una detallada.
++"""
++
++SYSTEM_PROMPT_COMMIT_DE = """Du bist ein Experte für das Schreiben klarer, prägnanter und konventioneller Git-Commit-Nachrichten.
++
++Regeln:
++1. Folge dem Conventional Commits Format: typ(bereich): beschreibung
++2. Typen: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
++3. Bereich ist optional aber empfohlen (z.B. feat(auth): login hinzufügen)
++4. Beschreibung: Imperativ, Kleinschreibung, kein Punkt, max 72 Zeichen
++5. Body: erkläre WARUM, nicht WAS (der Diff zeigt was sich geändert hat)
++6. Sei spezifisch, nicht generisch ("E-Mail-Validierung hinzufügen" nicht "Code aktualisieren")
++7. Bei mehreren logischen Änderungen, schlage mehrere Commits vor
++
++Ausgabeformat — JSON-Array von Vorschlägen:
++[
++  {
++    "message": "typ(bereich): beschreibung",
++    "type": "feat",
++    "scope": "auth",
++    "description": "E-Mail-Validierung zum Login-Formular hinzufügen",
++    "body": "Benutzer konnten ungültige E-Mails senden...",
++    "emoji": "✨",
++    "confidence": 0.95
++  }
++]
++
++Biete 3 Varianten: eine konventionelle, eine mit Emoji, eine detaillierte.
++"""
++
++SYSTEM_PROMPT_COMMIT_FR = """Vous êtes un expert en rédaction de messages de commit git clairs, concis et conventionnels.
++
++Règles :
++1. Suivez le format Conventional Commits : type(portée) : description
++2. Types : feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
++3. La portée est facultative mais recommandée (ex : feat(auth) : ajouter connexion)
++4. Description : mode impératif, minuscules, sans point, max 72 caractères
++5. Corps : expliquez POURQUOI, pas QUOI (le diff montre ce qui a changé)
++6. Soyez spécifique, pas générique ("ajouter la validation email" pas "mettre à jour le code")
++7. S'il y a plusieurs changements logiques, suggérez plusieurs commits
++
++Format de sortie — tableau JSON de suggestions :
++[
++  {
++    "message": "type(portée) : description",
++    "type": "feat",
++    "scope": "auth",
++    "description": "ajouter la validation email au formulaire de connexion",
++    "body": "Les utilisateurs pouvaient soumettre des emails invalides...",
++    "emoji": "✨",
++    "confidence": 0.95
++  }
++]
++
++Proposez 3 variantes : une conventionnelle, une avec emoji, une détaillée.
++"""
++
++SYSTEM_PROMPT_COMMIT_JA = """あなたは明確で簡潔な conventional な git コミットメッセージを書くエキスパートです。
++
++ルール:
++1. Conventional Commits フォーマットに従う: type(scope): description
++2. タイプ: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
++3. スコープはオプションですが推奨されます (例: feat(auth): ログインを追加)
++4. 説明: 命令形、小文字、ピリオドなし、最大72文字
++5. 本文: なぜ（WHY）を説明、何（WHAT）は不要（diffに表示されます）
++6. 具体的に書く（「コードを更新」ではなく「メールバリデーションを追加」）
++7. 複数の論理的変更がある場合は、複数のコミットを提案
++
++出力形式 — 提案のJSON配列:
++[
++  {
++    "message": "type(scope): description",
++    "type": "feat",
++    "scope": "auth",
++    "description": "ログインフォームにメールバリデーションを追加",
++    "body": "ユーザーが無効なメールを送信できていました...",
++    "emoji": "✨",
++    "confidence": 0.95
++  }
++]
++
++3つのバリエーションを提供：従来型、絵文字付き、詳細版。
++"""
++
++SYSTEM_PROMPT_COMMIT_ZH = """你是一位撰写清晰、简洁、规范化 git 提交消息的专家。
++
++规则：
++1. 遵循 Conventional Commits 格式：type(scope): description
++2. 类型：feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
++3. scope 是可选的但建议使用（例如：feat(auth): 添加登录）
++4. 描述：祈使语气，不加句号，最多72个字符
++5. 正文：解释为什么（WHY），而不是什么（WHAT）（diff 已经显示了变更内容）
++6. 要具体，不要笼统（"添加邮箱验证" 而不是 "更新代码"）
++7. 如果有多个逻辑变更，建议多个提交
++
++输出格式 — 建议的 JSON 数组：
++[
++  {
++    "message": "type(scope): description",
++    "type": "feat",
++    "scope": "auth",
++    "description": "在登录表单中添加邮箱验证",
++    "body": "用户之前可以提交无效的邮箱地址...",
++    "emoji": "✨",
++    "confidence": 0.95
++  }
++]
++
++提供3个变体：规范型、emoji型、详细型。
++"""
++
++# Language → system prompt mapping
++LANGUAGE_PROMPTS = {
++    "en": SYSTEM_PROMPT_COMMIT_EN,
++    "ru": SYSTEM_PROMPT_COMMIT_RU,
++    "es": SYSTEM_PROMPT_COMMIT_ES,
++    "de": SYSTEM_PROMPT_COMMIT_DE,
++    "fr": SYSTEM_PROMPT_COMMIT_FR,
++    "ja": SYSTEM_PROMPT_COMMIT_JA,
++    "zh": SYSTEM_PROMPT_COMMIT_ZH,
++}
++
++# ============================================================
++# Commit style profiles (appended to the base language prompt)
++# ============================================================
++
++STYLE_PROMPTS = {
++    "conventional": "",  # Default — uses the base language prompt as-is
++    "emoji": """
++
++ADDITIONAL STYLE RULE — Emoji style:
++- Start the commit message with the appropriate gitmoji emoji
++- Format: emoji description (no type prefix)
++- Example: ✨ add email validation to login form
++- Example: 🐛 fix crash on startup when config is missing""",
++    "plain": """
++
++ADDITIONAL STYLE RULE — Plain style:
++- No type prefix, no emoji, just a clear description
++- Use imperative mood, capitalize first letter
++- Example: Add email validation to login form
++- Example: Fix crash on startup when config is missing""",
++    "semantic-release": """
++
++ADDITIONAL STYLE RULE — Semantic Release style (Pro only):
++- Follow semantic-release conventions strictly
++- Use feat: for features (triggers MINOR release)
++- Use fix: for bug fixes (triggers PATCH release)
++- Use feat!: or fix!: for breaking changes (triggers MAJOR release)
++- Include BREAKING CHANGE: in body for breaking changes
++- Always include scope when possible
++- Example: feat(api)!: change authentication endpoint response format
++- Body must include: BREAKING CHANGE: The /auth endpoint now returns JWT instead of session token""",
++    "gitmoji-dict": """
++
++ADDITIONAL STYLE RULE — GitMoji Dictionary style (Pro only):
++- Use the full gitmoji dictionary with detailed emoji selection
++- Each commit MUST start with the most specific gitmoji from this extended list:
++  ✨ feat, 🐛 fix, 📚 docs, 💎 style, ♻️ refactor, ⚡ perf, ✅ test,
++  📦 build, 👷 ci, 🔧 chore, ⏪ revert, 🔒 security, 🌐 i18n,
++  ♿ accessibility, 📈 analytics, ➕ add dependency, ➖ remove dependency,
++  🐳 docker, 💄 ui/cosmetics, 🎉 initial commit, 🚧 wip,
++  ⚰️ remove dead code, 📝 add/update license, 💥 introduce breaking changes,
++  🧪 add failing test, ✏️ fix typo, 🔀 merge branch, 🛂 auth/permissions,
++  🔌 add/update API, 🔊 add/update logs, 🗃️ add/update database,
++  🧹 code cleanup, 💩 write bad code that needs refactoring
++- Format: emoji description
++- Example: 🌐 add Spanish translation for login page
++- Example: ♿ improve keyboard navigation in modal dialog
++- Example: 📈 add analytics tracking for user onboarding flow""",
++}
++
++
++def get_system_prompt(language: str, style: str) -> str:
++    """Get the combined system prompt for a given language and style."""
++    base = LANGUAGE_PROMPTS.get(language, LANGUAGE_PROMPTS["en"])
++    style_addon = STYLE_PROMPTS.get(style, "")
++    return base + style_addon
++
+ 
+ async def generate_commit_messages(
+     diff_text: str,
+@@ -202,6 +414,13 @@ async def generate_commit_messages(
+     """Generate AI-powered commit message suggestions from a git diff"""
+     settings = get_settings()
+ 
++    # Check if style requires Pro
++    if style in PRO_ONLY_STYLES:
++        from gitmoji_ai.usage import is_pro
++        if not is_pro():
++            logger.warning(f"Style '{style}' requires Pro. Falling back to 'conventional'.")
++            style = "conventional"
++
+     if not settings.openai_api_key:
+         return _fallback_commit_messages(diff_text, style)
+ 
+@@ -210,7 +429,7 @@ async def generate_commit_messages(
+     if len(diff_text) > max_chars:
+         diff_text = diff_text[:max_chars] + "\n\n... (diff truncated)"
+ 
+-    system_prompt = SYSTEM_PROMPT_COMMIT_RU if language == "ru" else SYSTEM_PROMPT_COMMIT
++    system_prompt = get_system_prompt(language, style)
+ 
+     user_prompt = f"""Generate commit messages for this diff:
+ 
+@@ -322,6 +541,12 @@ def _fallback_commit_messages(diff_text: str, style: str) -> list[CommitSuggesti
+         message = f"{emoji} {analysis.summary}"
+     elif style == "plain":
+         message = analysis.summary.capitalize()
++    elif style == "semantic-release":
++        # Fallback for semantic-release — same as conventional but with breaking change note
++        message = f"{msg_type}: {analysis.summary}"
++    elif style == "gitmoji-dict":
++        # Fallback for gitmoji-dict — same as emoji
++        message = f"{emoji} {analysis.summary}"
+     else:
+         message = f"{msg_type}: {analysis.summary}"
+ 
+diff --git a/src/gitmoji_ai/changelog.py b/src/gitmoji_ai/changelog.py
+index 1faa2f5..4d74b5b 100644
+--- a/src/gitmoji_ai/changelog.py
++++ b/src/gitmoji_ai/changelog.py
+@@ -54,6 +54,82 @@ SYSTEM_PROMPT_CHANGELOG_RU = """Ты — эксперт по написанию
+ Выведи полный раздел changelog в формате Markdown.
+ """
+ 
++
++SYSTEM_PROMPT_CHANGELOG_ES = """Eres un experto en escribir listas de cambios bonitas y bien organizadas.
++
++Reglas:
++1. Agrupa los cambios por tipo: Nuevas funciones, Correcciones, Mejoras, Documentación, etc.
++2. Escribe en lenguaje amigable para el usuario (sin jerga técnica)
++3. Cada entrada debe comenzar con un verbo en modo imperativo
++4. Incluye los cambios importantes de forma destacada
++5. Sé conciso pero informativo
++6. Formato Markdown
++
++Genera una sección completa de changelog en formato Markdown.
++"""
++
++SYSTEM_PROMPT_CHANGELOG_DE = """Du bist ein Experte für das Schreiben schöner, gut organisierter Changelogs.
++
++Regeln:
++1. Gruppiere Änderungen nach Typ: Neue Funktionen, Fehlerbehebungen, Verbesserungen, Dokumentation usw.
++2. Schreibe in benutzerfreundlicher Sprache (kein Fachjargon)
++3. Jeder Eintrag sollte mit einem Verb im Imperativ beginnen
++4. Brechende Änderungen hervorheben
++5. Sei prägnant aber informativ
++6. Format als Markdown
++
++Erstelle einen vollständigen Changelog-Abschnitt im Markdown-Format.
++"""
++
++SYSTEM_PROMPT_CHANGELOG_FR = """Vous êtes un expert en rédaction de changelogs beaux et bien organisés.
++
++Règles :
++1. Groupez les changements par type : Nouvelles fonctionnalités, Corrections, Améliorations, Documentation, etc.
++2. Écrivez dans un langage convivial (sans jargon technique)
++3. Chaque entrée doit commencer par un verbe à l'impératif
++4. Incluez les changements cassants de manière visible
++5. Soyez concis mais informatif
++6. Format Markdown
++
++Générez une section de changelog complète au format Markdown.
++"""
++
++SYSTEM_PROMPT_CHANGELOG_JA = """あなたは美しく整理されたチェンジログを書くエキスパートです。
++
++ルール:
++1. 変更をタイプ別にグループ化：新機能、バグ修正、改善、ドキュメントなど
++2. ユーザーフレンドリーな言葉で書く（技術用語を避ける）
++3. 各項目は命令形の動詞で始める
++4. 破壊的変更を目立たせる
++5. 簡潔だが情報豊かに
++6. Markdown形式
++
++Markdown形式で完全なチェンジログセクションを出力してください。
++"""
++
++SYSTEM_PROMPT_CHANGELOG_ZH = """你是一位撰写美观、组织良好的变更日志的专家。
++
++规则：
++1. 按类型分组变更：新功能、错误修复、改进、文档等
++2. 使用用户友好的语言（避免技术术语）
++3. 每个条目以祈使语气的动词开头
++4. 突出显示破坏性变更
++5. 简洁但信息丰富
++6. Markdown 格式
++
++生成完整的 Markdown 格式变更日志部分。
++"""
++
++CHANGELOG_LANGUAGE_PROMPTS = {
++    "en": SYSTEM_PROMPT_CHANGELOG,
++    "ru": SYSTEM_PROMPT_CHANGELOG_RU,
++    "es": SYSTEM_PROMPT_CHANGELOG_ES,
++    "de": SYSTEM_PROMPT_CHANGELOG_DE,
++    "fr": SYSTEM_PROMPT_CHANGELOG_FR,
++    "ja": SYSTEM_PROMPT_CHANGELOG_JA,
++    "zh": SYSTEM_PROMPT_CHANGELOG_ZH,
++}
++
+ CHANGELOG_TEMPLATE = """# Changelog
+ 
+ All notable changes to this project will be documented in this file.
+@@ -226,7 +302,7 @@ async def _ai_changelog(
+         f"- {c['subject']} ({c['hash'][:7]})" for c in commits[:50]
+     )
+ 
+-    system_prompt = SYSTEM_PROMPT_CHANGELOG_RU if language == "ru" else SYSTEM_PROMPT_CHANGELOG
++    system_prompt = CHANGELOG_LANGUAGE_PROMPTS.get(language, CHANGELOG_LANGUAGE_PROMPTS["en"])
+ 
+     try:
+         client = AsyncOpenAI(
+diff --git a/src/gitmoji_ai/cli.py b/src/gitmoji_ai/cli.py
+index 1cbd1c6..159e327 100644
+--- a/src/gitmoji_ai/cli.py
++++ b/src/gitmoji_ai/cli.py
+@@ -22,8 +22,9 @@ from gitmoji_ai.git_ops import (
+ )
+ from gitmoji_ai.ai_engine import generate_commit_messages, analyze_diff
+ from gitmoji_ai.changelog import generate_changelog, update_changelog_file
+-from gitmoji_ai.usage import track_usage, check_limit, get_usage_stats, activate_license
++from gitmoji_ai.usage import track_usage, check_limit, get_usage_stats, activate_license, is_pro
+ from gitmoji_ai.suggest import suggest_commit
++from gitmoji_ai.team import init_team_config, load_team_config, check_team_compliance, validate_commit_against_team, TEAM_CONFIG_FILENAME
+ 
+ console = Console()
+ app = typer.Typer(
+@@ -52,7 +53,7 @@ def main(
+ 
+ @app.command()
+ def commit(
+-    style: str = typer.Option("conventional", "--style", "-s", help="Commit style: conventional, emoji, plain"),
++    style: str = typer.Option("conventional", "--style", "-s", help="Commit style: conventional, emoji, plain, semantic-release (Pro), gitmoji-dict (Pro)"),
+     language: str = typer.Option("en", "--lang", "-l", help="Language: en, ru, es, de, fr"),
+     stage: bool = typer.Option(False, "--stage", "-a", help="Stage all changes before committing"),
+     sign: bool = typer.Option(False, "--sign", "-S", help="GPG-sign the commit"),
+@@ -64,10 +65,7 @@ def commit(
+     # Check limits (also checks GitHub Sponsors)
+     from gitmoji_ai.sponsors import is_pro_via_sponsor
+     is_sponsor, _ = is_pro_via_sponsor()
+-    if is_sponsor:
+-        settings = get_settings()
+-        if not settings.is_pro:
+-            settings.pro_license_key = "sponsor"
++    # Sponsor status is checked via is_pro_via_sponsor() in usage.py — no need to set key
+ 
+     allowed, remaining = check_limit("commit")
+     if not allowed:
+@@ -85,6 +83,15 @@ def commit(
+         ))
+         raise typer.Exit(1)
+ 
++    # Apply team config defaults if available
++    from gitmoji_ai.team import load_team_config as _load_team
++    _team_cfg = _load_team(path)
++    if _team_cfg:
++        if language == "en" and _team_cfg.language != "en":
++            language = _team_cfg.language
++        if style == "conventional" and _team_cfg.commit_style != "conventional":
++            style = _team_cfg.commit_style
++
+     # Get repo info
+     repo = get_repo_info(path)
+     if not repo.is_git_repo:
+@@ -171,6 +178,19 @@ def commit(
+         else:
+             selected = suggestions[int(choice) - 1]
+ 
++    # Check team rules
++    from gitmoji_ai.team import load_team_config, validate_commit_against_team
++    team_config = load_team_config(path)
++    if team_config:
++        violations = validate_commit_against_team(selected.message, team_config)
++        if violations:
++            console.print("[yellow]⚠️ Team rule violations:[/yellow]")
++            for v in violations:
++                console.print(f"  • {v}")
++            if not Confirm.ask("Commit anyway?"):
++                console.print("[dim]Cancelled.[/dim]")
++                raise typer.Exit()
++
+     # Confirm and commit
+     console.print(f"\n[bold]Selected:[/bold] {selected.message}")
+ 
+@@ -180,10 +200,13 @@ def commit(
+             full_message += f"\n\n{selected.body}"
+ 
+         # Add watermark for free tier
+-        settings = get_settings()
+-        if not settings.is_pro:
++        if not is_pro():
+             full_message += "\n\n🤖 Generated by gitmoji-ai (free)"
+ 
++        # Add team footer if required
++        if team_config and team_config.require_footer and team_config.footer_template:
++            full_message += f"\n\n{team_config.footer_template}"
++
+         success = create_commit(full_message, path, sign)
+         if success:
+             track_usage("commit")
+@@ -199,7 +222,7 @@ def commit(
+ def changelog(
+     version: str = typer.Option("Unreleased", "--version", "-v", help="Version tag"),
+     format: str = typer.Option("keepachangelog", "--format", "-f", help="Format: keepachangelog, angular"),
+-    language: str = typer.Option("en", "--lang", "-l", help="Language: en, ru"),
++    language: str = typer.Option("en", "--lang", "-l", help="Language: en, ru, es, de, fr, ja, zh"),
+     since: Optional[str] = typer.Option(None, "--since", help="Generate changes since tag"),
+     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
+     no_ai: bool = typer.Option(False, "--no-ai", help="Disable AI, use manual grouping"),
+@@ -419,7 +442,7 @@ def pro(
+ def suggest(
+     path: str = typer.Option(".", "--path", "-p", help="Repository path"),
+     language: str = typer.Option("en", "--lang", "-l", help="Language: en, ru, es, de, fr"),
+-    style: str = typer.Option("conventional", "--style", "-s", help="Commit style: conventional, emoji, plain"),
++    style: str = typer.Option("conventional", "--style", "-s", help="Commit style: conventional, emoji, plain, semantic-release (Pro), gitmoji-dict (Pro)"),
+     quiet: bool = typer.Option(False, "--quiet", "-q", help="Output only the message text (for hooks)"),
+ ):
+     """💡 Quick suggest a commit message (non-interactive, for git hooks)"""
+@@ -513,5 +536,157 @@ fi
+     ))
+ 
+ 
++
++@app.command()
++def team(
++    action: str = typer.Argument(..., help="init | check"),
++    path: str = typer.Option(".", "--path", "-p", help="Repository path"),
++):
++    """👥 Team configuration — shared commit conventions"""
++
++    if action == "init":
++        try:
++            config_path = init_team_config(path)
++            console.print(Panel(
++                f"[bold green]✅ Team config created![/bold green]
++
++"
++                f"  File: [cyan]{config_path}[/cyan]
++
++"
++                f"Edit the file to define your team's commit conventions.
++"
++                f"Commit it to the repo so all team members follow the same rules.
++
++"
++                f"  [bold]Supported rules:[/bold]
++"
++                f"  • required_types — only allow specific commit types
++"
++                f"  • required_scopes — enforce scope usage
++"
++                f"  • max_subject_length — limit subject line length
++"
++                f"  • custom_types — alias custom types to conventional types
++"
++                f"  • commit_style — set team-wide commit style
++"
++                f"  • disallowed_types — ban certain commit types",
++                title="👥 Team Config",
++                border_style="green",
++            ))
++        except FileExistsError:
++            console.print(f"[yellow]⚠️ {TEAM_CONFIG_FILENAME} already exists[/yellow]")
++        except FileNotFoundError:
++            console.print("[red]❌ Not a git repository[/red]")
++            raise typer.Exit(1)
++
++    elif action == "check":
++        result = check_team_compliance(path)
++        if not result["has_team_config"]:
++            console.print(f"[yellow]No {TEAM_CONFIG_FILENAME} found in this repository[/yellow]")
++            console.print("[dim]Run 'gmai team init' to create one[/dim]")
++            return
++
++        config = result["config"]
++        console.print(Panel(
++            f"  [bold]Style:[/bold] {config.commit_style}
++"
++            f"  [bold]Language:[/bold] {config.language}
++"
++            f"  [bold]Max subject length:[/bold] {config.max_subject_length}
++"
++            f"  [bold]Require scope:[/bold] {'Yes' if config.require_scope else 'No'}
++"
++            f"  [bold]Required types:[/bold] {', '.join(config.required_types) or 'All'}
++"
++            f"  [bold]Required scopes:[/bold] {', '.join(config.required_scopes) or 'Any'}
++"
++            f"  [bold]Disallowed types:[/bold] {', '.join(config.disallowed_types) or 'None'}",
++            title="👥 Team Rules",
++            border_style="blue",
++        ))
++
++        violations = result["violations"]
++        total = result["total_checked"]
++        if violations:
++            table = Table(title=f"⚠️ Team Rule Violations ({len(violations)} in last {total} commits)", show_lines=True)
++            table.add_column("Commit", style="bold", width=8)
++            table.add_column("Subject", style="cyan")
++            table.add_column("Violation", style="red")
++
++            for v in violations[:20]:
++                table.add_row(v["commit"], v["subject"][:50], v["violation"])
++
++            console.print(table)
++        else:
++            console.print(f"[green]✅ All {total} recent commits comply with team rules![/green]")
++
++    else:
++        console.print(f"[red]Unknown action: {action}[/red]")
++        console.print("[dim]Use: init or check[/dim]")
++
++
++@app.command()
++def support():
++    """🆘 Create a support request with debug info"""
++
++    import platform
++    import sys
++
++    settings = get_settings()
++    repo = get_repo_info(".")
++    stats = get_usage_stats()
++
++    debug_info = f"""## Bug Report / Support Request
++
++### Environment
++- **OS**: {platform.system()} {platform.release()}
++- **Python**: {sys.version}
++- **gitmoji-ai**: v{__version__}
++- **Git**: {repo.is_git_repo and 'Yes' or 'No'}
++
++### Configuration
++- **OpenAI API Key**: {'Set' if settings.openai_api_key else 'Not set'}
++- **Model**: {settings.openai_model}
++- **Language**: {settings.default_language}
++- **Style**: {settings.commit_style}
++
++### Usage
++- **Plan**: {'Pro' if stats['is_pro'] else 'Free'}
++- **Commits this month**: {stats['commits_this_month']}/{stats['commit_limit']}
++- **Changelogs this month**: {stats['changelogs_this_month']}/{stats['changelog_limit']}
++
++### Description
++<!-- Describe your issue here -->
++
++### Steps to Reproduce
++1. 
++2. 
++3. 
++
++### Expected Behavior
++
++
++### Actual Behavior
++
++
++### Additional Context
++"""
++
++    console.print(Panel(
++        f"[bold]🆘 Support Request Template[/bold]
++
++"
++        f"Copy the template below and create a new issue:
++"
++        f"[link]https://github.com/sochiautoparts/gitmoji-ai/issues/new[/link]
++
++"
++        f"[dim]The template includes your environment info for faster debugging.[/dim]",
++        border_style="blue",
++    ))
++    console.print(debug_info)
++
+ if __name__ == "__main__":
+     app()
+diff --git a/src/gitmoji_ai/config.py b/src/gitmoji_ai/config.py
+index 55a98b5..e2d73a2 100644
+--- a/src/gitmoji_ai/config.py
++++ b/src/gitmoji_ai/config.py
+@@ -39,11 +39,6 @@ class Settings(BaseSettings):
+ 
+     model_config = {"env_prefix": "GMAI_", "env_file": ".env", "extra": "ignore"}
+ 
+-    @property
+-    def is_pro(self) -> bool:
+-        """Check if Pro license key is set. Actual verification done in usage.py"""
+-        return bool(self.pro_license_key)
+-
+     @property
+     def db_path(self) -> Path:
+         return self.config_dir / "usage.db"
+diff --git a/src/gitmoji_ai/sponsors.py b/src/gitmoji_ai/sponsors.py
+index e5a3638..73f2176 100644
+--- a/src/gitmoji_ai/sponsors.py
++++ b/src/gitmoji_ai/sponsors.py
+@@ -10,6 +10,7 @@ How it works:
+ No license keys needed — your GitHub sponsorship IS your license!
+ """
+ 
++import os
+ import time
+ import logging
+ import webbrowser
+@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
+ # === Configuration ===
+ SPONSOR_TIER_PRO = 5       # $5/month = Pro
+ SPONSOR_TIER_TEAM = 20     # $20/month = Team
+-GITHUB_CLIENT_ID = "Ov23li4G0Vn3TmY9AoFZ"  # Placeholder — replace with real OAuth App
++GITHUB_CLIENT_ID = os.environ.get("GITHUB_CLIENT_ID", "")  # Set via env var; empty = PAT-only flow
+ 
+ SPONSOR_TARGET = "sochiautoparts"  # GitHub account to sponsor
+ 
+@@ -51,14 +52,19 @@ def _get_auth_file() -> Path:
+ 
+ 
+ def save_github_token(token: str) -> None:
+-    """Save GitHub OAuth token locally"""
++    """Save GitHub OAuth token locally with restricted permissions (600)"""
+     import json
+     auth_file = _get_auth_file()
+     auth_file.write_text(json.dumps({
+         "github_token": token,
+         "saved_at": time.time(),
+     }), encoding="utf-8")
+-    logger.info("GitHub token saved")
++    # Restrict file permissions to owner-only (read/write)
++    try:
++        os.chmod(auth_file, 0o600)
++    except OSError:
++        logger.warning("Could not set permissions on auth file")
++    logger.info("GitHub token saved with restricted permissions")
+ 
+ 
+ def load_github_token() -> Optional[str]:
+@@ -177,31 +183,131 @@ def _get_github_login(token: str) -> Optional[str]:
+ def device_flow_login() -> Optional[str]:
+     """
+     GitHub Device Flow authentication.
+-    No OAuth app required — works with personal access tokens too.
+     
+-    Flow:
+-    1. Generate device code
+-    2. User visits github.com/login/device and enters code
++    If GITHUB_CLIENT_ID is set, uses the real OAuth device flow:
++    1. POST to GitHub to get device + user codes
++    2. Show user the code and URL
+     3. Poll for access token
+-    4. Return token
++    4. Validate sponsor status
++    
++    If GITHUB_CLIENT_ID is NOT set, falls back to PAT-based approach.
+     """
+-    # For simplicity, we use a simpler approach:
+-    # User provides their GitHub PAT with 'read:user' scope
+-    # We validate it and check sponsor status
++    client_id = GITHUB_CLIENT_ID
+     
+-    print("\n🔗 To link your GitHub sponsorship as your Pro license:")
+-    print("")
+-    print("  1. Go to: https://github.com/sponsors/sochiautoparts")
+-    print("  2. Choose a tier ($5/month = Pro, $20/month = Team)")
+-    print("  3. Complete sponsorship")
+-    print("  4. Create a PAT with 'read:user' scope:")
+-    print("     https://github.com/settings/tokens/new?scopes=read:user")
+-    print("  5. Run: gmai pro login <your-pat>")
+-    print("")
+-    print("  Your sponsorship = your Pro license! 🎉")
+-    print("  Cancel sponsorship = Pro expires at end of billing period.")
++    if not client_id:
++        # No OAuth app configured — fall back to PAT approach
++        print("\n🔗 To link your GitHub sponsorship as your Pro license:")
++        print("")
++        print("  1. Go to: https://github.com/sponsors/sochiautoparts")
++        print("  2. Choose a tier ($5/month = Pro, $20/month = Team)")
++        print("  3. Complete sponsorship")
++        print("  4. Create a PAT with 'read:user' scope:")
++        print("     https://github.com/settings/tokens/new?scopes=read:user")
++        print("  5. Run: gmai pro login <your-pat>")
++        print("")
++        print("  Your sponsorship = your Pro license! 🎉")
++        print("  Cancel sponsorship = Pro expires at end of billing period.")
++        print("")
++        print("  [dim]To enable interactive device flow, set GITHUB_CLIENT_ID env var.[/dim]")
++        return None
+     
+-    return None
++    # --- Real Device Flow ---
++    try:
++        # Step 1: Request device and user codes
++        resp = httpx.post(
++            "https://github.com/login/device/code",
++            data={"client_id": client_id, "scope": "read:user"},
++            headers={"Accept": "application/json"},
++            timeout=15,
++        )
++        if resp.status_code != 200:
++            print(f"❌ Failed to start device flow: {resp.status_code}")
++            print("  Falling back to PAT approach. Run: gmai pro login <your-pat>")
++            return None
++        
++        data = resp.json()
++        device_code = data.get("device_code", "")
++        user_code = data.get("user_code", "")
++        verification_uri = data.get("verification_uri", "https://github.com/login/device")
++        interval = data.get("interval", 5)
++        expires_in = data.get("expires_in", 900)
++        
++        # Step 2: Show user the code
++        print("\n🔗 GitHub Device Flow Authentication")
++        print("=" * 40)
++        print(f"")
++        print(f"  1. Open this URL in your browser:")
++        print(f"     [bold cyan]{verification_uri}[/bold cyan]")
++        print(f"")
++        print(f"  2. Enter this code:")
++        print(f"     [bold yellow]{user_code}[/bold yellow]")
++        print(f"")
++        print(f"  Waiting for authorization... (expires in {expires_in // 60} minutes)")
++        
++        # Step 3: Poll for access token
++        import time as _time
++        start = _time.time()
++        while (_time.time() - start) < expires_in:
++            _time.sleep(interval)
++            
++            poll_resp = httpx.post(
++                "https://github.com/login/oauth/access_token",
++                data={
++                    "client_id": client_id,
++                    "device_code": device_code,
++                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
++                },
++                headers={"Accept": "application/json"},
++                timeout=15,
++            )
++            
++            poll_data = poll_resp.json()
++            
++            if "access_token" in poll_data:
++                token = poll_data["access_token"]
++                print("\n✅ Authorization successful!")
++                
++                # Step 4: Validate sponsor status
++                print("🔍 Checking sponsor status...")
++                is_pro, info = validate_sponsor_token(token)
++                if is_pro and info:
++                    print(f"\n⭐ Pro activated via GitHub Sponsors!")
++                    print(f"  Account: @{info.github_login}")
++                    print(f"  Tier: {info.tier_name} (${info.tier_amount}/month)")
++                    return token
++                else:
++                    print("\n⚠️ Authorization successful, but you're not a sponsor yet.")
++                    print("  Sponsor the project at: https://github.com/sponsors/sochiautoparts")
++                    print("  Then run: gmai pro login <your-pat>")
++                    return None
++            
++            error = poll_data.get("error", "")
++            if error == "authorization_pending":
++                # User hasn't entered the code yet — keep waiting
++                continue
++            elif error == "slow_down":
++                interval += 5
++                continue
++            elif error == "expired_token":
++                print("\n❌ Device code expired. Please try again.")
++                return None
++            elif error == "access_denied":
++                print("\n❌ Authorization denied by user.")
++                return None
++            else:
++                print(f"\n❌ Unexpected error: {error}")
++                return None
++        
++        print("\n❌ Device flow timed out. Please try again.")
++        return None
++        
++    except httpx.TimeoutException:
++        print("\n❌ Network timeout during device flow. Check your internet connection.")
++        return None
++    except Exception as exc:
++        print(f"\n❌ Device flow error: {exc}")
++        print("  Falling back to PAT approach. Run: gmai pro login <your-pat>")
++        return None
+ 
+ 
+ def validate_sponsor_token(token: str) -> tuple[bool, Optional[SponsorInfo]]:
+@@ -229,13 +335,10 @@ def is_pro_via_sponsor() -> tuple[bool, Optional[str]]:
+     Check if current user has Pro via GitHub Sponsors.
+     Returns (is_pro, tier_name)
+     """
+-    # Check env var first
+-    settings = get_settings()
+-    if settings.pro_license_key:
+-        # Old-style license key — still works
+-        from gitmoji_ai.usage import check_license_valid
+-        if check_license_valid():
+-            return True, "Pro (License Key)"
++    # Check license key first (via is_pro)
++    from gitmoji_ai.usage import is_pro as check_is_pro
++    if check_is_pro():
++        return True, "Pro (License Key)"
+ 
+     # Check saved GitHub token
+     github_token = load_github_token()
+diff --git a/src/gitmoji_ai/suggest.py b/src/gitmoji_ai/suggest.py
+index e699af0..0fec0d5 100644
+--- a/src/gitmoji_ai/suggest.py
++++ b/src/gitmoji_ai/suggest.py
+@@ -8,10 +8,18 @@ import sys
+ from gitmoji_ai.git_ops import get_staged_diff, get_unstaged_diff
+ from gitmoji_ai.ai_engine import generate_commit_messages
+ from gitmoji_ai.config import get_settings
++from gitmoji_ai.usage import check_limit, is_pro
+ 
+ 
+ def suggest_commit(path: str = ".", language: str = "en", style: str = "conventional") -> str:
+     """Generate a single commit suggestion (non-interactive, for hooks)"""
++    
++    # Check rate limits — free users have limited commits per month
++    allowed, remaining = check_limit("commit")
++    if not allowed:
++        print("⚠️ Monthly commit limit reached. Upgrade to Pro for unlimited.", file=sys.stderr)
++        return ""
++
+     diff = get_staged_diff(path)
+     if not diff:
+         diff = get_unstaged_diff(path)
+@@ -20,5 +28,9 @@ def suggest_commit(path: str = ".", language: str = "en", style: str = "conventi
+ 
+     suggestions = asyncio.run(generate_commit_messages(diff, language, style))
+     if suggestions:
+-        return suggestions[0].message
++        message = suggestions[0].message
++        # Add watermark for free tier
++        if not is_pro():
++            message += " (gitmoji-ai free)"
++        return message
+     return ""
+diff --git a/src/gitmoji_ai/team.py b/src/gitmoji_ai/team.py
+new file mode 100644
+index 0000000..5a5f37d
+--- /dev/null
++++ b/src/gitmoji_ai/team.py
+@@ -0,0 +1,223 @@
++"""
++Team configuration — shared commit conventions via .gitmoji-ai-team.yml
++
++This file can be committed to the repo so all team members follow the same rules.
++"""
++
++import os
++import re
++from pathlib import Path
++from typing import Optional
++from dataclasses import dataclass, field
++
++import yaml
++
++logger = __import__("logging").getLogger(__name__)
++
++TEAM_CONFIG_FILENAME = ".gitmoji-ai-team.yml"
++
++DEFAULT_TEAM_CONFIG = """# GitMoji AI Team Configuration
++# Commit this file to your repo to enforce team conventions.
++
++# Required commit types (only these types are allowed)
++# If empty, all conventional types are allowed.
++required_types: []
++
++# Required scopes (commits must include one of these scopes)
++# If empty, no scope is required.
++required_scopes: []
++
++# Maximum subject line length (characters)
++max_subject_length: 72
++
++# Custom type aliases (map custom type to conventional type)
++# Example: feature -> feat, bugfix -> fix
++custom_types: {}
++
++# Commit style for the team
++# Options: conventional, emoji, plain, semantic-release, gitmoji-dict
++commit_style: conventional
++
++# Language for commit messages
++# Options: en, ru, es, de, fr, ja, zh
++language: en
++
++# Require scope in commit messages
++require_scope: false
++
++# Disallow certain types
++disallowed_types: []
++
++# Footer requirements
++require_footer: false
++footer_template: ""
++
++# Changelog format
++# Options: keepachangelog, angular
++changelog_format: keepachangelog
++"""
++
++
++@dataclass
++class TeamConfig:
++    """Parsed team configuration"""
++    required_types: list[str] = field(default_factory=list)
++    required_scopes: list[str] = field(default_factory=list)
++    max_subject_length: int = 72
++    custom_types: dict[str, str] = field(default_factory=dict)
++    commit_style: str = "conventional"
++    language: str = "en"
++    require_scope: bool = False
++    disallowed_types: list[str] = field(default_factory=list)
++    require_footer: bool = False
++    footer_template: str = ""
++    changelog_format: str = "keepachangelog"
++
++
++def find_team_config(repo_path: str = ".") -> Optional[Path]:
++    """Find .gitmoji-ai-team.yml by walking up from repo_path to root."""
++    current = Path(repo_path).resolve()
++    while True:
++        candidate = current / TEAM_CONFIG_FILENAME
++        if candidate.exists():
++            return candidate
++        parent = current.parent
++        if parent == current:
++            break
++        current = parent
++    return None
++
++
++def load_team_config(repo_path: str = ".") -> Optional[TeamConfig]:
++    """Load and parse the team config file. Returns None if not found."""
++    config_path = find_team_config(repo_path)
++    if not config_path:
++        return None
++
++    try:
++        with open(config_path, "r", encoding="utf-8") as f:
++            data = yaml.safe_load(f) or {}
++
++        return TeamConfig(
++            required_types=data.get("required_types", []),
++            required_scopes=data.get("required_scopes", []),
++            max_subject_length=data.get("max_subject_length", 72),
++            custom_types=data.get("custom_types", {}),
++            commit_style=data.get("commit_style", "conventional"),
++            language=data.get("language", "en"),
++            require_scope=data.get("require_scope", False),
++            disallowed_types=data.get("disallowed_types", []),
++            require_footer=data.get("require_footer", False),
++            footer_template=data.get("footer_template", ""),
++            changelog_format=data.get("changelog_format", "keepachangelog"),
++        )
++    except Exception as exc:
++        logger.warning("Failed to load team config: %s", exc)
++        return None
++
++
++def init_team_config(repo_path: str = ".") -> Path:
++    """Create a .gitmoji-ai-team.yml file in the repo root."""
++    # Find git root
++    git_dir = Path(repo_path) / ".git"
++    if not git_dir.exists():
++        # Walk up
++        current = Path(repo_path).resolve()
++        while not (current / ".git").exists():
++            parent = current.parent
++            if parent == current:
++                raise FileNotFoundError("Not a git repository")
++            current = parent
++        repo_root = current
++    else:
++        repo_root = Path(repo_path).resolve()
++
++    config_path = repo_root / TEAM_CONFIG_FILENAME
++    if config_path.exists():
++        raise FileExistsError(f"{TEAM_CONFIG_FILENAME} already exists at {config_path}")
++
++    config_path.write_text(DEFAULT_TEAM_CONFIG, encoding="utf-8")
++    return config_path
++
++
++def validate_commit_against_team(
++    message: str,
++    config: TeamConfig,
++) -> list[str]:
++    """Validate a commit message against team rules. Returns list of violations."""
++    violations = []
++
++    # Parse the commit message
++    # Pattern: type(scope): description
++    pattern = r'^(\w+)(?:\(([^)]+)\))?:\s*(.+)$'
++    match = re.match(pattern, message)
++
++    if not match:
++        # Not conventional commit format
++        if config.required_types or config.require_scope:
++            violations.append("Commit message must follow Conventional Commits format: type(scope): description")
++        return violations
++
++    msg_type = match.group(1)
++    scope = match.group(2) or ""
++    description = match.group(3)
++
++    # Check required types
++    if config.required_types and msg_type not in config.required_types:
++        # Check custom type aliases
++        resolved_type = config.custom_types.get(msg_type)
++        if resolved_type not in config.required_types:
++            violations.append(
++                f"Type '{msg_type}' not allowed. Allowed types: {', '.join(config.required_types)}"
++            )
++
++    # Check disallowed types
++    if msg_type in config.disallowed_types:
++        violations.append(f"Type '{msg_type}' is disallowed by team rules")
++
++    # Check required scope
++    if config.require_scope and not scope:
++        violations.append("Scope is required by team rules")
++
++    # Check required scopes
++    if config.required_scopes and scope and scope not in config.required_scopes:
++        violations.append(
++            f"Scope '{scope}' not allowed. Allowed scopes: {', '.join(config.required_scopes)}"
++        )
++
++    # Check subject length
++    subject_len = len(description)
++    if subject_len > config.max_subject_length:
++        violations.append(
++            f"Subject too long ({subject_len} chars). Max: {config.max_subject_length}"
++        )
++
++    return violations
++
++
++def check_team_compliance(repo_path: str = ".") -> dict:
++    """Check if recent commits comply with team rules. Returns summary dict."""
++    config = load_team_config(repo_path)
++    if not config:
++        return {"has_team_config": False, "violations": [], "total_checked": 0}
++
++    from gitmoji_ai.git_ops import get_recent_commits
++    commits = get_recent_commits(20, repo_path)
++
++    all_violations = []
++    for commit in commits:
++        subject = commit["subject"]
++        violations = validate_commit_against_team(subject, config)
++        for v in violations:
++            all_violations.append({
++                "commit": commit["hash"][:7],
++                "subject": subject,
++                "violation": v,
++            })
++
++    return {
++        "has_team_config": True,
++        "total_checked": len(commits),
++        "violations": all_violations,
++        "config": config,
++    }
+diff --git a/src/gitmoji_ai/usage.py b/src/gitmoji_ai/usage.py
+index 7c8eb48..1ca3d50 100644
+--- a/src/gitmoji_ai/usage.py
++++ b/src/gitmoji_ai/usage.py
+@@ -106,7 +106,7 @@ def check_limit(action: str) -> tuple[bool, int]:
+     settings = get_settings()
+ 
+     # Pro users have no limits
+-    if settings.is_pro or is_pro():
++    if is_pro():
+         return True, 999
+ 
+     used = get_monthly_usage(action)
+@@ -406,6 +406,6 @@ def get_usage_stats() -> dict:
+         "changelogs_this_month": get_monthly_usage("changelog"),
+         "commit_limit": settings.free_commits_per_month,
+         "changelog_limit": settings.free_changelog_per_month,
+-        "is_pro": settings.is_pro or is_pro(),
++        "is_pro": is_pro(),
+         "license_status": check_license_with_api(),
+     }
+diff --git a/tests/test_core.py b/tests/test_core.py
+index fda9878..d8af65a 100644
+--- a/tests/test_core.py
++++ b/tests/test_core.py
+@@ -1,8 +1,16 @@
+ """Tests for GitMoji AI"""
+ 
+ import pytest
+-from gitmoji_ai.ai_engine import analyze_diff, _fallback_commit_messages, GITMOJI_MAP
++from gitmoji_ai.ai_engine import (
++    analyze_diff, _fallback_commit_messages, GITMOJI_MAP,
++    CONVENTIONAL_TYPES, LANGUAGE_PROMPTS, STYLE_PROMPTS,
++    AVAILABLE_STYLES, PRO_ONLY_STYLES, get_system_prompt,
++)
+ from gitmoji_ai.changelog import parse_commit_subject, group_commits_by_type
++from gitmoji_ai.team import (
++    TeamConfig, validate_commit_against_team,
++    TEAM_CONFIG_FILENAME, DEFAULT_TEAM_CONFIG,
++)
+ 
+ 
+ class TestDiffAnalysis:
+@@ -112,6 +120,18 @@ new file mode 100644
+         suggestions = _fallback_commit_messages("new file mode\n+feature", "emoji")
+         assert any(e in suggestions[0].message for e in GITMOJI_MAP.values())
+ 
++    def test_plain_style(self):
++        suggestions = _fallback_commit_messages("new file mode\n+feature", "plain")
++        assert suggestions[0].message[0].isupper()
++
++    def test_semantic_release_style(self):
++        suggestions = _fallback_commit_messages("new file mode\n+feature", "semantic-release")
++        assert len(suggestions) >= 1
++
++    def test_gitmoji_dict_style(self):
++        suggestions = _fallback_commit_messages("new file mode\n+feature", "gitmoji-dict")
++        assert len(suggestions) >= 1
++
+     def test_empty_diff_fallback(self):
+         suggestions = _fallback_commit_messages("", "conventional")
+         assert len(suggestions) >= 1
+@@ -140,10 +160,154 @@ class TestGitmojiMap:
+     """Test GitMoji emoji mapping"""
+ 
+     def test_all_conventional_types_have_emoji(self):
+-        from gitmoji_ai.ai_engine import CONVENTIONAL_TYPES
+         for t in CONVENTIONAL_TYPES:
+             assert t in GITMOJI_MAP, f"Missing emoji for type: {t}"
+ 
+     def test_emoji_are_unicode(self):
+         for key, emoji in GITMOJI_MAP.items():
+             assert len(emoji) >= 1, f"Empty emoji for {key}"
++
++
++class TestLanguagePrompts:
++    """Test all 7 language prompts exist"""
++
++    def test_all_languages_have_prompts(self):
++        for lang in ["en", "ru", "es", "de", "fr", "ja", "zh"]:
++            assert lang in LANGUAGE_PROMPTS, f"Missing prompt for language: {lang}"
++
++    def test_prompts_are_nonempty(self):
++        for lang, prompt in LANGUAGE_PROMPTS.items():
++            assert len(prompt) > 100, f"Prompt too short for language: {lang}"
++
++    def test_get_system_prompt_default(self):
++        prompt = get_system_prompt("en", "conventional")
++        assert "Conventional Commits" in prompt
++
++    def test_get_system_prompt_unknown_language(self):
++        prompt = get_system_prompt("xx", "conventional")
++        # Should fall back to English
++        assert "Conventional Commits" in prompt
++
++    def test_get_system_prompt_with_style(self):
++        prompt = get_system_prompt("en", "emoji")
++        assert "Emoji style" in prompt
++
++    def test_get_system_prompt_semantic_release(self):
++        prompt = get_system_prompt("en", "semantic-release")
++        assert "Semantic Release" in prompt
++
++    def test_get_system_prompt_gitmoji_dict(self):
++        prompt = get_system_prompt("en", "gitmoji-dict")
++        assert "GitMoji Dictionary" in prompt
++
++
++class TestCommitStyles:
++    """Test commit style profiles"""
++
++    def test_all_styles_have_prompts(self):
++        for style in AVAILABLE_STYLES:
++            assert style in STYLE_PROMPTS, f"Missing style prompt for: {style}"
++
++    def test_pro_only_styles(self):
++        assert "semantic-release" in PRO_ONLY_STYLES
++        assert "gitmoji-dict" in PRO_ONLY_STYLES
++        assert "conventional" not in PRO_ONLY_STYLES
++        assert "emoji" not in PRO_ONLY_STYLES
++        assert "plain" not in PRO_ONLY_STYLES
++
++    def test_available_styles_list(self):
++        assert "conventional" in AVAILABLE_STYLES
++        assert "emoji" in AVAILABLE_STYLES
++        assert "plain" in AVAILABLE_STYLES
++        assert "semantic-release" in AVAILABLE_STYLES
++        assert "gitmoji-dict" in AVAILABLE_STYLES
++
++
++class TestTeamConfig:
++    """Test team configuration"""
++
++    def test_default_team_config(self):
++        config = TeamConfig()
++        assert config.commit_style == "conventional"
++        assert config.language == "en"
++        assert config.max_subject_length == 72
++        assert config.require_scope is False
++        assert config.required_types == []
++        assert config.required_scopes == []
++        assert config.disallowed_types == []
++
++    def test_validate_commit_no_rules(self):
++        config = TeamConfig()
++        violations = validate_commit_against_team("feat(auth): add login", config)
++        assert len(violations) == 0
++
++    def test_validate_commit_required_types(self):
++        config = TeamConfig(required_types=["feat", "fix"])
++        violations = validate_commit_against_team("chore: update config", config)
++        assert len(violations) == 1
++        assert "not allowed" in violations[0]
++
++    def test_validate_commit_required_types_valid(self):
++        config = TeamConfig(required_types=["feat", "fix"])
++        violations = validate_commit_against_team("feat: add login", config)
++        assert len(violations) == 0
++
++    def test_validate_commit_disallowed_types(self):
++        config = TeamConfig(disallowed_types=["poo"])
++        violations = validate_commit_against_team("poo: bad code", config)
++        assert len(violations) == 1
++        assert "disallowed" in violations[0]
++
++    def test_validate_commit_require_scope(self):
++        config = TeamConfig(require_scope=True)
++        violations = validate_commit_against_team("feat: add login", config)
++        assert len(violations) == 1
++        assert "Scope is required" in violations[0]
++
++    def test_validate_commit_require_scope_with_scope(self):
++        config = TeamConfig(require_scope=True)
++        violations = validate_commit_against_team("feat(auth): add login", config)
++        assert len(violations) == 0
++
++    def test_validate_commit_required_scopes(self):
++        config = TeamConfig(required_scopes=["api", "ui"])
++        violations = validate_commit_against_team("feat(auth): add login", config)
++        assert len(violations) == 1
++        assert "not allowed" in violations[0]
++
++    def test_validate_commit_required_scopes_valid(self):
++        config = TeamConfig(required_scopes=["api", "ui"])
++        violations = validate_commit_against_team("feat(api): add endpoint", config)
++        assert len(violations) == 0
++
++    def test_validate_commit_subject_too_long(self):
++        config = TeamConfig(max_subject_length=20)
++        violations = validate_commit_against_team("feat(auth): this is a very long description that exceeds the limit", config)
++        assert len(violations) == 1
++        assert "too long" in violations[0]
++
++    def test_validate_commit_custom_type_alias(self):
++        config = TeamConfig(required_types=["feat"], custom_types={"feature": "feat"})
++        violations = validate_commit_against_team("feature: add login", config)
++        assert len(violations) == 0
++
++    def test_team_config_filename(self):
++        assert TEAM_CONFIG_FILENAME == ".gitmoji-ai-team.yml"
++
++    def test_default_team_config_has_yaml(self):
++        assert "required_types:" in DEFAULT_TEAM_CONFIG
++        assert "required_scopes:" in DEFAULT_TEAM_CONFIG
++        assert "commit_style:" in DEFAULT_TEAM_CONFIG
++
++
++class TestConfigSecurity:
++    """Test that is_pro property was removed from Settings"""
++
++    def test_settings_has_no_is_pro_property(self):
++        from gitmoji_ai.config import Settings
++        s = Settings()
++        assert not hasattr(s, 'is_pro'), "Settings should NOT have is_pro property — use is_pro() from usage.py"
++
++    def test_is_pro_is_function(self):
++        from gitmoji_ai.usage import is_pro
++        assert callable(is_pro), "is_pro should be a function, not a property"
+-- 
+2.47.3
+

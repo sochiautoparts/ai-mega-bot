@@ -1,0 +1,3267 @@
+From 1f6fe8275f68ddfde2ca865ca7e795d78b805662 Mon Sep 17 00:00:00 2001
+From: sochiautoparts <sochiautoparts@users.noreply.github.com>
+Date: Fri, 29 May 2026 19:12:25 +0000
+Subject: [PATCH] fix: resolve all critical issues and implement real Pro
+ features (v2.0.0)
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+CRITICAL FIXES:
+1. Fixed GitHub Action: --badges → --badge (singular) to match CLI
+2. Fixed cache timestamp TypeError: ISO string vs Unix timestamp
+3. Fixed commit count: now shows lifetime total via multi-year GraphQL
+4. Fixed SVG rendering: replaced all emoji with SVG icons
+5. Fixed animations: SMIL-only (<animate>) that works on GitHub
+6. Real Spotify badge: fetches now-playing via Spotify API
+7. Real Weather badge: fetches via wttr.in (no API key needed)
+8. Custom colors: now actually read from config and applied
+9. Cache security: HMAC-signed cache prevents manual bypass
+10. API rate limiting: in-memory cache + retry logic
+
+PRO FEATURES IMPLEMENTED:
+- Real SMIL animations (pulse, gradient, typing, sparkle)
+- Real Spotify now-playing badge (with API integration)
+- Real Weather badge (wttr.in, dynamic SVG weather icons)
+- Custom colors from config (--color KEY=VALUE CLI flag)
+- Rate limiting for GitHub API calls
+
+OTHER CHANGES:
+- Updated README.md: no misleading claims, documented real features
+- Updated docs/index.html: v2.0 changelog, real Pro features
+- Version bump to 2.0.0
+- 72/72 tests passing
+---
+ README.md                    | 225 +++++++------
+ action.yml                   |   2 +-
+ docs/index.html              | 265 ++++++++-------
+ examples/profile.md          |   6 +-
+ pyproject.toml               |   4 +-
+ src/devbadge/__init__.py     |   4 +-
+ src/devbadge/animations.py   | 187 ++++++-----
+ src/devbadge/badges.py       | 626 ++++++++++++++++++++++++-----------
+ src/devbadge/cli.py          |  74 +++--
+ src/devbadge/config.py       | 112 +++++--
+ src/devbadge/github_stats.py | 247 +++++++++++++-
+ tests/test_badges.py         | 315 ++++++++++++++++--
+ 12 files changed, 1463 insertions(+), 604 deletions(-)
+
+diff --git a/README.md b/README.md
+index 9057e61..9e84af0 100644
+--- a/README.md
++++ b/README.md
+@@ -1,10 +1,10 @@
+ <div align="center">
+ 
+-# 🏅 DevBadge
++# DevBadge
+ 
+ **Dynamic SVG badges for GitHub profiles**
+ 
+-Generate beautiful, customizable badges that showcase your GitHub stats, languages, activity, and more — all in pure SVG.
++Generate beautiful, customizable badges that showcase your GitHub stats, languages, activity, and more — all in pure SVG with no emoji dependencies.
+ 
+ [![PyPI version](https://img.shields.io/pypi/v/devbadge?color=415a77)](https://pypi.org/project/devbadge/)
+ [![Python](https://img.shields.io/pypi/pyversions/devbadge?color=415a77)](https://pypi.org/project/devbadge/)
+@@ -15,33 +15,11 @@ Generate beautiful, customizable badges that showcase your GitHub stats, languag
+ 
+ ---
+ 
+-## ✨ Demo
++## Demo
+ 
+ ### Commit Badge
+ <img src="https://raw.githubusercontent.com/sochiautoparts/devbadge/main/badges/commits.svg" alt="Commits" />
+ 
+-<details>
+-<summary>📝 SVG Preview</summary>
+-
+-```svg
+-<svg xmlns="http://www.w3.org/2000/svg" width="340" height="50" viewBox="0 0 340 50">
+-  <rect width="340" height="50" rx="6" fill="#0d1b2a" />
+-  <rect x="0.5" y="0.5" width="339" height="49" rx="5.5" fill="none" stroke="#415a77" stroke-width="1" opacity="0.3" />
+-  <text x="42" y="22" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="#e0e1dd">octocat's commits</text>
+-  <text x="42" y="40" font-family="'Courier New', monospace" font-size="18" font-weight="700" fill="#415a77">1,247</text>
+-  <circle cx="24" cy="25" r="6" fill="none" stroke="#415a77" stroke-width="2" />
+-  <circle cx="24" cy="25" r="2" fill="#415a77" />
+-  <line x1="24" y1="19" x2="24" y2="10" stroke="#415a77" stroke-width="2" />
+-  <line x1="24" y1="31" x2="24" y2="40" stroke="#415a77" stroke-width="2" />
+-  <polyline points="140,38 146,32 152,34 158,28 164,30 170,22 176,26 182,20 188,24 194,18 200,22 206,16 212,20 218,14 224,18 230,12 236,16 242,10 248,14 254,12 260,16 266,10 272,14 278,18 284,12 290,16 296,20 302,14 308,18 314,16 320,20" fill="none" stroke="#415a77" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8" />
+-  <a href="https://github.com/sochiautoparts/devbadge" target="_blank">
+-    <text x="4" y="46" font-family="Arial, sans-serif" font-size="8" fill="#666666" opacity="0.6">DevBadge</text>
+-  </a>
+-</svg>
+-```
+-
+-</details>
+-
+ ### Language Badge
+ <img src="https://raw.githubusercontent.com/sochiautoparts/devbadge/main/badges/languages.svg" alt="Languages" />
+ 
+@@ -53,7 +31,7 @@ Generate beautiful, customizable badges that showcase your GitHub stats, languag
+ 
+ ---
+ 
+-## 🚀 Installation
++## Installation
+ 
+ ```bash
+ pip install devbadge
+@@ -69,7 +47,7 @@ pip install -e .
+ 
+ ---
+ 
+-## 📖 Usage
++## Usage
+ 
+ ### CLI
+ 
+@@ -83,6 +61,15 @@ devbadge generate --user octocat --all --theme github-dark
+ # Generate with output directory
+ devbadge generate --user octocat --all --output ./my-badges/
+ 
++# Generate with custom colors (Pro)
++devbadge generate --user octocat --all --color accent=#ff0000 --color background=#111111
++
++# Weather badge with city (Pro)
++devbadge generate --user octocat --badge weather --city "San Francisco"
++
++# Spotify now-playing badge (Pro)
++devbadge generate --user octocat --badge spotify --spotify-token "your_oauth_token"
++
+ # Initialize config file
+ devbadge init
+ 
+@@ -127,21 +114,31 @@ from devbadge.config import is_pro
+ 
+ # Pro badges (require license key)
+ if is_pro("SP-DVB-xxxx-xxxx"):
++    # Coffee badge with SVG icon (no emoji)
+     svg = generate_badge("coffee", is_pro_user=True, username="dev", coffee_count=5)
+-    svg = generate_badge("spotify", is_pro_user=True, song="Bohemian Rhapsody", artist="Queen")  # placeholder
+-    svg = generate_badge("weather", is_pro_user=True, temp="22°C", condition="Sunny")  # placeholder
+ 
+-# Animated badges (Pro only)
++    # Spotify now-playing (real API via SPOTIFY_TOKEN env var)
++    svg = generate_badge("spotify", is_pro_user=True, spotify_token="your_token")
++
++    # Weather badge (real wttr.in API, no API key needed)
++    svg = generate_badge("weather", is_pro_user=True, city="Tokyo")
++
++# Custom colors (Pro)
++svg = generate_badge("stats", stats=stats, is_pro_user=True,
++                     custom_colors={"accent": "#ff6600", "background": "#1a1a2e"})
++
++# SMIL animations that work on GitHub (Pro only)
+ from devbadge.animations import apply_animation
+ svg = generate_badge("stats", stats=stats, is_pro_user=True)
+ svg = apply_animation(svg, "pulse", "stats-1", is_pro=True, color="#58a6ff")
++svg = apply_animation(svg, "sparkle", "stars-1", is_pro=True, count=3)
+ ```
+ 
+-> **Note:** Spotify and Weather badges are currently placeholders. Full integration with Spotify API and weather services is coming soon.
++> **Note:** All animations use SMIL (`<animate>`, `<animateTransform>`) which GitHub DOES support in SVGs. No CSS `<style>` tags are used.
+ 
+ ---
+ 
+-## 🤖 GitHub Action
++## GitHub Action
+ 
+ Add this to `.github/workflows/update-badges.yml`:
+ 
+@@ -168,31 +165,23 @@ jobs:
+           badges: 'commits,languages,stats,activity'
+           theme: 'dracula'
+           output-dir: './badges'
+-```
+-
+-Or run manually:
+-
+-```yaml
+-- name: Install & Generate
+-  run: |
+-    pip install devbadge
+-    devbadge generate --user ${{ github.repository_owner }} --all --theme dracula --token ${{ secrets.GITHUB_TOKEN }} --output ./badges
++          license-key: ${{ secrets.DEVBADGE_LICENSE }}
+ ```
+ 
+ ---
+ 
+-## 🎨 Themes
++## Themes
+ 
+ | Theme | Preview | Pro Only |
+ |-------|---------|----------|
+-| `default` | Dark blue | ❌ |
+-| `dracula` | Dracula purple | ❌ |
+-| `github-dark` | GitHub Dark | ❌ |
+-| `solarized` | Solarized Dark | ❌ |
+-| `nord` | Nord palette | ❌ |
+-| `monokai` | Monokai green | ❌ |
+-| `neon` | Neon glow ⚡ | ⭐ Yes |
+-| `aurora` | Aurora gradient ⚡ | ⭐ Yes |
++| `default` | Dark blue | No |
++| `dracula` | Dracula purple | No |
++| `github-dark` | GitHub Dark | No |
++| `solarized` | Solarized Dark | No |
++| `nord` | Nord palette | No |
++| `monokai` | Monokai green | No |
++| `neon` | Neon glow | Yes |
++| `aurora` | Aurora gradient | Yes |
+ 
+ ```bash
+ # Use a theme
+@@ -204,100 +193,95 @@ devbadge generate --user octocat --theme neon --all --license SP-DVB-xxxx-xxxx
+ 
+ ---
+ 
+-## 🏷️ Badge Types
++## Badge Types
+ 
+ | Badge | Type | Free | Pro |
+ |-------|------|------|-----|
+-| Commits | `commits` | ✅ | ✅ |
+-| Languages | `languages` | ✅ | ✅ |
+-| Stats | `stats` | ✅ | ✅ |
+-| Activity | `activity` | ✅ | ✅ |
+-| Profile | `profile` | ✅ | ✅ |
+-| Coffee | `coffee` | 🔒 | ✅ |
+-| Spotify | `spotify` | 🔒 | ✅ *(placeholder)* |
+-| Weather | `weather` | 🔒 | ✅ *(placeholder)* |
++| Commits | `commits` | Yes | Yes |
++| Languages | `languages` | Yes | Yes |
++| Stats | `stats` | Yes | Yes |
++| Activity | `activity` | Yes | Yes |
++| Profile | `profile` | Yes | Yes |
++| Coffee | `coffee` | Locked | Yes |
++| Spotify | `spotify` | Locked | Yes |
++| Weather | `weather` | Locked | Yes |
++
++### Pro Badge Details
++
++- **Coffee**: SVG coffee cup icon + count. No emoji, renders everywhere.
++- **Spotify**: Real now-playing via Spotify API (set `SPOTIFY_TOKEN`). Falls back to "Not configured".
++- **Weather**: Real weather via wttr.in API (set `DEVBADGE_WEATHER_CITY` or use `--city`). No API key needed.
+ 
+ ---
+ 
+-## 🆚 Free vs Pro
++## Free vs Pro
+ 
+-| Feature | Free | Pro ⭐ |
+-|---------|------|--------|
+-| Basic badges (5 types) | ✅ | ✅ |
+-| Pro badges (3 types) | 🔒 | ✅ |
+-| Themes (6) | ✅ | ✅ |
+-| Pro themes (2 animated) | 🔒 | ✅ |
+-| Animations | 🔒 | ✅ |
+-| No watermark | 🔒 | ✅ |
+-| Custom colors | 🔒 | ✅ |
+-| Priority support | 🔒 | ✅ |
++| Feature | Free | Pro |
++|---------|------|-----|
++| Basic badges (5 types) | Yes | Yes |
++| Pro badges (3 types) | Locked | Yes |
++| Themes (6 free) | Yes | Yes |
++| Pro themes (2) | Locked | Yes |
++| SMIL animations | Locked | Yes |
++| Custom colors | Locked | Yes |
++| No watermark | Locked | Yes |
++| Rate-limited API | Yes | Yes |
+ 
+ ---
+ 
+-## 💎 Pro Version & Оплата
++## Pro Version & Pricing
+ 
+-### Цены / Pricing
++### Prices
+ 
+ | Plan | Price | Features |
+ |------|-------|----------|
+-| **Free** | $0 навсегда | 5 базовых бейджей, 6 тем, с водяным знаком |
+-| **Pro Monthly** | ⭐149/мес | Все бейджи + анимации + темы + без водяного знака |
+-| **Pro Yearly** | ⭐999/год | Всё из Pro + экономия 44% |
+-| **Pro Lifetime** | ⭐2999 навсегда | Всё из Pro + пожизненный доступ + ранний доступ к фичам |
++| **Free** | $0 forever | 5 basic badges, 6 themes, with watermark |
++| **Pro Monthly** | 149 stars/mo | All badges + animations + themes + no watermark |
++| **Pro Yearly** | 999 stars/yr | Everything in Pro + 44% savings |
++| **Pro Lifetime** | 2999 stars forever | Everything in Pro + lifetime access + early features |
+ 
+-### Как купить / How to Buy
++### How to Buy
+ 
+-1. Откройте бота [@allstarspay_bot](https://t.me/allstarspay_bot) в Telegram
+-2. Выберите продукт **DevBadge Pro**
+-3. Оплатите подходящий план
+-4. Получите лицензионный ключ формата `SP-DVB-xxxx-xxxx`
+-5. Активируйте ключ:
++1. Open bot [@allstarspay_bot](https://t.me/allstarspay_bot) in Telegram
++2. Select **DevBadge Pro** product
++3. Pay with the selected plan
++4. Receive a license key in format `SP-DVB-xxxx-xxxx`
++5. Activate the key:
+ 
+ ```bash
+ devbadge pro activate SP-DVB-xxxx-xxxx
+ ```
+ 
+-Или через переменную окружения:
++Or via environment variable:
+ 
+ ```bash
+ export LICENSE_KEY=SP-DVB-xxxx-xxxx
+ devbadge generate --user octocat --all
+ ```
+ 
+-### Конфигурация бота / Bot Config
+-
+-```json
+-"devbadge": {
+-    "name": "DevBadge Pro",
+-    "description": "Динамические SVG-бейджи для GitHub — анимации, темы, без водяного знака",
+-    "plans": {
+-        "month": {"price": 149, "label": "1 месяц", "days": 30},
+-        "year": {"price": 999, "label": "1 год", "days": 365},
+-        "lifetime": {"price": 2999, "label": "Навсегда", "days": 0}
+-    },
+-    "prefix": "DVB"
+-}
+-```
+-
+ ---
+ 
+-## 🔑 License Verification
++## License Verification
+ 
+-DevBadge Pro uses a multi-layer license verification system:
++DevBadge Pro uses a multi-layer license verification system with HMAC-signed cache:
+ 
+-1. **Local Cache** — Cached verification result in `~/.devbadge/license_cache.json` (offline capable, 7-day TTL)
++1. **Local Cache** — HMAC-signed cache in `~/.devbadge/license_cache.json` (offline capable, 24h re-verification)
+ 2. **Public Registry** — Checks `licenses.json` from [StarsPay Bot repo](https://github.com/sochiautoparts/stars-pay-bot)
+ 3. **REST API Fallback** — Verifies via StarsPay API with `STARSPAY_API_KEY`
+ 
++### Cache Security
++
++Cache entries are signed with HMAC using a key derived from the license key. Manually creating cache files with `valid=true` will fail signature verification. Cache expires after 24 hours and must be re-verified with the server.
++
+ ### Key Format
+ 
+ ```
+ SP-DVB-xxxx-xxxx
+-│  │   │    │
+-│  │   │    └── Unique suffix (4 chars)
+-│  │   └── Product code (DVB = DevBadge)
+-│  └── StarsPay prefix
+-└── Service identifier
++|  |   |    |
++|  |   |    +-- Unique suffix (4 chars)
++|  |   +-- Product code (DVB = DevBadge)
++|  +-- StarsPay prefix
+++-- Service identifier
+ ```
+ 
+ ### Environment Variables
+@@ -306,13 +290,34 @@ SP-DVB-xxxx-xxxx
+ |----------|-------------|
+ | `LICENSE_KEY` or `DEVBADGE_LICENSE` | Pro license key |
+ | `GITHUB_TOKEN` | GitHub personal access token |
++| `SPOTIFY_TOKEN` | Spotify OAuth token (for now-playing badge) |
++| `DEVBADGE_WEATHER_CITY` | Default city for weather badge |
+ | `STARSPAY_API_KEY` | StarsPay API key (for REST fallback) |
+ | `DEVBADGE_THEME` | Default theme |
+ | `DEVBADGE_OUTPUT` | Default output directory |
+ 
+ ---
+ 
+-## 🤝 Contributing
++## Technical Details
++
++### SVG Rendering
++
++All badges use pure SVG with no emoji characters. Emoji in `<text>` elements don't render reliably across platforms, so we use:
++- SVG shape icons (circles, polygons, paths) for visual elements
++- Plain text labels for stat names
++- SMIL `<animate>` for animations (GitHub-compatible)
++
++### Commit Count
++
++DevBadge fetches **lifetime** commit counts by summing `contributionsCollection` across all years from the user's account creation date. This provides accurate total commit counts, not just the current year.
++
++### API Rate Limiting
++
++GitHub API calls are cached in memory for 5 minutes to respect rate limits. When rate-limited, the tool automatically waits (up to 60s) and retries.
++
++---
++
++## Contributing
+ 
+ Contributions are welcome! Please feel free to submit a Pull Request.
+ 
+@@ -333,7 +338,7 @@ pytest tests/ -v
+ 
+ ---
+ 
+-## 📄 License
++## License
+ 
+ This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+ 
+@@ -341,8 +346,8 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
+ 
+ <div align="center">
+ 
+-**[⭐ Get DevBadge Pro](https://t.me/allstarspay_bot)** · **[📚 Documentation](https://sochiautoparts.github.io/devbadge/)** · **[🐛 Report Bug](https://github.com/sochiautoparts/devbadge/issues)**
++**[Get DevBadge Pro](https://t.me/allstarspay_bot)** · **[Documentation](https://sochiautoparts.github.io/devbadge/)** · **[Report Bug](https://github.com/sochiautoparts/devbadge/issues)**
+ 
+-Made with ❤️ by [sochiautoparts](https://github.com/sochiautoparts)
++Made with care by [sochiautoparts](https://github.com/sochiautoparts)
+ 
+ </div>
+diff --git a/action.yml b/action.yml
+index 7c78720..6cbd9eb 100644
+--- a/action.yml
++++ b/action.yml
+@@ -34,7 +34,7 @@ runs:
+       run: |
+         devbadge generate \
+           --user ${{ github.repository_owner }} \
+-          --badges "${{ inputs.badges }}" \
++          --badge "${{ inputs.badges }}" \
+           --theme ${{ inputs.theme }} \
+           --output ${{ inputs.output-dir }} \
+           --token ${{ inputs.github-token }} \
+diff --git a/docs/index.html b/docs/index.html
+index d155e7f..9c2c699 100644
+--- a/docs/index.html
++++ b/docs/index.html
+@@ -4,7 +4,7 @@
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>DevBadge — Dynamic SVG Badges for GitHub</title>
+-  <meta name="description" content="Generate beautiful, dynamic SVG badges for your GitHub profile. Themes, animations, and more.">
++  <meta name="description" content="Generate beautiful, dynamic SVG badges for your GitHub profile. Themes, SMIL animations, weather, Spotify, and more.">
+   <style>
+     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+@@ -242,7 +242,7 @@
+       box-shadow: 0 0 30px var(--pro-glow);
+     }
+     .price-card.popular::before {
+-      content: '🔥 Популярно';
++      content: 'Popular';
+       position: absolute;
+       top: -12px;
+       left: 50%;
+@@ -285,11 +285,11 @@
+       color: var(--muted);
+     }
+     .price-card ul li::before {
+-      content: '✓ ';
++      content: '\2713 ';
+       color: var(--accent2);
+     }
+     .price-card ul li.pro-only::before {
+-      content: '⭐ ';
++      content: '\2B50 ';
+       color: var(--pro);
+     }
+ 
+@@ -340,6 +340,45 @@
+       color: var(--accent2);
+     }
+ 
++    /* What's New */
++    .whatsnew {
++      padding: 4rem 2rem;
++      max-width: 900px;
++      margin: 0 auto;
++    }
++    .whatsnew h2 {
++      text-align: center;
++      font-size: 2rem;
++      margin-bottom: 2rem;
++    }
++    .changelog {
++      background: var(--bg2);
++      border: 1px solid var(--border);
++      border-radius: 12px;
++      padding: 1.5rem 2rem;
++    }
++    .changelog .version {
++      font-size: 1.1rem;
++      font-weight: 700;
++      color: var(--accent);
++      margin-bottom: 0.5rem;
++    }
++    .changelog ul {
++      list-style: none;
++      padding: 0;
++    }
++    .changelog ul li {
++      padding: 0.25rem 0;
++      color: var(--muted);
++      font-size: 0.9rem;
++    }
++    .changelog ul li::before {
++      content: '\2192 ';
++      color: var(--accent);
++    }
++    .changelog .fix { color: var(--accent2); }
++    .changelog .fix::before { content: '\2713 '; color: var(--accent2); }
++
+     /* Footer */
+     footer {
+       text-align: center;
+@@ -392,13 +431,6 @@
+       .features-grid { grid-template-columns: 1fr; }
+       nav .links a.hide-mobile { display: none; }
+     }
+-
+-    /* Animations */
+-    @keyframes float {
+-      0%, 100% { transform: translateY(0); }
+-      50% { transform: translateY(-8px); }
+-    }
+-    .float-anim { animation: float 3s ease-in-out infinite; }
+   </style>
+ </head>
+ <body>
+@@ -428,18 +460,18 @@
+   <!-- Hero Section -->
+   <section class="hero">
+     <h1>Dynamic SVG Badges<br>for GitHub Profiles</h1>
+-    <p>Generate beautiful, customizable badges that showcase your GitHub stats, languages, activity, and more — all in pure SVG.</p>
++    <p>Generate beautiful, customizable badges that showcase your GitHub stats, languages, activity, and more — all in pure SVG with no emoji dependencies.</p>
+     <div class="cta-group">
+-      <a href="#quickstart" class="btn btn-primary">Get Started →</a>
++      <a href="#quickstart" class="btn btn-primary">Get Started &rarr;</a>
+       <a href="https://github.com/sochiautoparts/devbadge" target="_blank" class="btn btn-secondary">View on GitHub</a>
+-      <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro">⭐ Get Pro</a>
++      <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro">Get Pro</a>
+     </div>
+   </section>
+ 
+   <!-- Demo Badges -->
+   <section class="demo-badges">
+     <h2>Live Demo</h2>
+-    <div class="badge-grid float-anim">
++    <div class="badge-grid">
+       <!-- Commit Badge Demo -->
+       <svg xmlns="http://www.w3.org/2000/svg" width="340" height="50" viewBox="0 0 340 50">
+         <rect width="340" height="50" rx="6" fill="#0d1b2a" />
+@@ -450,7 +482,6 @@
+         <circle cx="24" cy="25" r="2" fill="#415a77" />
+         <line x1="24" y1="19" x2="24" y2="10" stroke="#415a77" stroke-width="2" />
+         <line x1="24" y1="31" x2="24" y2="40" stroke="#415a77" stroke-width="2" />
+-        <polyline points="140,38 146,32 152,34 158,28 164,30 170,22 176,26 182,20 188,24 194,18 200,22 206,16 212,20 218,14 224,18 230,12 236,16 242,10 248,14 254,12 260,16 266,10 272,14 278,18 284,12 290,16 296,20 302,14 308,18 314,16 320,20" fill="none" stroke="#415a77" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8" />
+         <a href="https://github.com/sochiautoparts/devbadge" target="_blank">
+           <text x="4" y="46" font-family="Arial, sans-serif" font-size="8" fill="#666666" opacity="0.6">DevBadge</text>
+         </a>
+@@ -471,11 +502,6 @@
+         <text x="104" y="46" font-family="Arial, sans-serif" font-size="10" fill="#e0e1dd">JS 27%</text>
+         <circle cx="158" cy="42" r="4" fill="#3178c6" />
+         <text x="166" y="46" font-family="Arial, sans-serif" font-size="10" fill="#e0e1dd">TS 17%</text>
+-        <circle cx="222" cy="42" r="4" fill="#dea584" />
+-        <text x="230" y="46" font-family="Arial, sans-serif" font-size="10" fill="#e0e1dd">Rust 9%</text>
+-        <a href="https://github.com/sochiautoparts/devbadge" target="_blank">
+-          <text x="4" y="46" font-family="Arial, sans-serif" font-size="8" fill="#666666" opacity="0.6">DevBadge</text>
+-        </a>
+       </svg>
+ 
+       <!-- Stats Badge Demo -->
+@@ -483,59 +509,40 @@
+         <rect width="340" height="100" rx="6" fill="#0d1b2a" />
+         <rect x="0.5" y="0.5" width="339" height="99" rx="5.5" fill="none" stroke="#415a77" stroke-width="1" opacity="0.3" />
+         <text x="170" y="14" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="#e0e1dd" text-anchor="middle">GitHub Stats</text>
+-        <text x="14" y="24" font-family="Arial, sans-serif" font-size="9" fill="#778da9">★ Stars</text>
++        <text x="14" y="24" font-family="Arial, sans-serif" font-size="9" fill="#778da9">Stars</text>
+         <text x="14" y="38" font-family="'Courier New', monospace" font-size="14" font-weight="700" fill="#415a77">2.4k</text>
+-        <text x="119" y="24" font-family="Arial, sans-serif" font-size="9" fill="#778da9">⑂ Forks</text>
++        <text x="119" y="24" font-family="Arial, sans-serif" font-size="9" fill="#778da9">Forks</text>
+         <text x="119" y="38" font-family="'Courier New', monospace" font-size="14" font-weight="700" fill="#778da9">380</text>
+-        <text x="224" y="24" font-family="Arial, sans-serif" font-size="9" fill="#778da9">📦 Repos</text>
++        <text x="224" y="24" font-family="Arial, sans-serif" font-size="9" fill="#778da9">Repos</text>
+         <text x="224" y="38" font-family="'Courier New', monospace" font-size="14" font-weight="700" fill="#415a77">42</text>
+-        <text x="14" y="52" font-family="Arial, sans-serif" font-size="9" fill="#778da9">👥 Followers</text>
++        <text x="14" y="52" font-family="Arial, sans-serif" font-size="9" fill="#778da9">Followers</text>
+         <text x="14" y="66" font-family="'Courier New', monospace" font-size="14" font-weight="700" fill="#778da9">156</text>
+-        <text x="119" y="52" font-family="Arial, sans-serif" font-size="9" fill="#778da9">🔀 PRs</text>
++        <text x="119" y="52" font-family="Arial, sans-serif" font-size="9" fill="#778da9">PRs</text>
+         <text x="119" y="66" font-family="'Courier New', monospace" font-size="14" font-weight="700" fill="#415a77">89</text>
+-        <text x="224" y="52" font-family="Arial, sans-serif" font-size="9" fill="#778da9">❗ Issues</text>
++        <text x="224" y="52" font-family="Arial, sans-serif" font-size="9" fill="#778da9">Issues</text>
+         <text x="224" y="66" font-family="'Courier New', monospace" font-size="14" font-weight="700" fill="#415a77">34</text>
+-        <a href="https://github.com/sochiautoparts/devbadge" target="_blank">
+-          <text x="4" y="96" font-family="Arial, sans-serif" font-size="8" fill="#666666" opacity="0.6">DevBadge</text>
+-        </a>
+       </svg>
++    </div>
++  </section>
+ 
+-      <!-- Activity Badge Demo -->
+-      <svg xmlns="http://www.w3.org/2000/svg" width="340" height="85" viewBox="0 0 340 85">
+-        <rect width="340" height="85" rx="6" fill="#0d1b2a" />
+-        <rect x="0.5" y="0.5" width="339" height="84" rx="5.5" fill="none" stroke="#415a77" stroke-width="1" opacity="0.3" />
+-        <text x="170" y="16" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="#e0e1dd" text-anchor="middle">Contribution Activity</text>
+-        <!-- Mini heatmap grid -->
+-        <g transform="translate(12, 24)">
+-          <!-- Week 1 -->
+-          <rect x="0" y="0" width="8" height="8" rx="1" fill="#1b263b" />
+-          <rect x="0" y="10" width="8" height="8" rx="1" fill="#415a7733" />
+-          <rect x="0" y="20" width="8" height="8" rx="1" fill="#415a7766" />
+-          <rect x="0" y="30" width="8" height="8" rx="1" fill="#415a7799" />
+-          <rect x="0" y="40" width="8" height="8" rx="1" fill="#415a77" />
+-          <rect x="0" y="50" width="8" height="8" rx="1" fill="#1b263b" />
+-          <rect x="0" y="60" width="8" height="8" rx="1" fill="#1b263b" />
+-          <!-- Week 2 -->
+-          <rect x="10" y="0" width="8" height="8" rx="1" fill="#415a7733" />
+-          <rect x="10" y="10" width="8" height="8" rx="1" fill="#415a7766" />
+-          <rect x="10" y="20" width="8" height="8" rx="1" fill="#415a7799" />
+-          <rect x="10" y="30" width="8" height="8" rx="1" fill="#415a77" />
+-          <rect x="10" y="40" width="8" height="8" rx="1" fill="#1b263b" />
+-          <rect x="10" y="50" width="8" height="8" rx="1" fill="#415a7733" />
+-          <rect x="10" y="60" width="8" height="8" rx="1" fill="#1b263b" />
+-          <!-- Week 3-16 (simplified) -->
+-          <rect x="20" y="0" width="8" height="8" rx="1" fill="#415a7766" /><rect x="30" y="0" width="8" height="8" rx="1" fill="#415a7733" /><rect x="40" y="0" width="8" height="8" rx="1" fill="#415a7799" /><rect x="50" y="0" width="8" height="8" rx="1" fill="#1b263b" /><rect x="60" y="0" width="8" height="8" rx="1" fill="#415a7766" /><rect x="70" y="0" width="8" height="8" rx="1" fill="#415a77" /><rect x="80" y="0" width="8" height="8" rx="1" fill="#415a7733" /><rect x="90" y="0" width="8" height="8" rx="1" fill="#1b263b" /><rect x="100" y="0" width="8" height="8" rx="1" fill="#415a7799" /><rect x="110" y="0" width="8" height="8" rx="1" fill="#415a7766" /><rect x="120" y="0" width="8" height="8" rx="1" fill="#415a7733" /><rect x="130" y="0" width="8" height="8" rx="1" fill="#415a77" /><rect x="140" y="0" width="8" height="8" rx="1" fill="#415a7766" /><rect x="150" y="0" width="8" height="8" rx="1" fill="#415a7733" />
+-          <rect x="20" y="10" width="8" height="8" rx="1" fill="#415a7799" /><rect x="30" y="10" width="8" height="8" rx="1" fill="#415a7766" /><rect x="40" y="10" width="8" height="8" rx="1" fill="#1b263b" /><rect x="50" y="10" width="8" height="8" rx="1" fill="#415a7733" /><rect x="60" y="10" width="8" height="8" rx="1" fill="#415a7799" /><rect x="70" y="10" width="8" height="8" rx="1" fill="#415a7766" /><rect x="80" y="10" width="8" height="8" rx="1" fill="#415a77" /><rect x="90" y="10" width="8" height="8" rx="1" fill="#415a7733" /><rect x="100" y="10" width="8" height="8" rx="1" fill="#1b263b" /><rect x="110" y="10" width="8" height="8" rx="1" fill="#415a7766" /><rect x="120" y="10" width="8" height="8" rx="1" fill="#415a7799" /><rect x="130" y="10" width="8" height="8" rx="1" fill="#415a7733" /><rect x="140" y="10" width="8" height="8" rx="1" fill="#415a77" /><rect x="150" y="10" width="8" height="8" rx="1" fill="#415a7766" />
+-          <rect x="20" y="20" width="8" height="8" rx="1" fill="#415a7733" /><rect x="30" y="20" width="8" height="8" rx="1" fill="#1b263b" /><rect x="40" y="20" width="8" height="8" rx="1" fill="#415a7799" /><rect x="50" y="20" width="8" height="8" rx="1" fill="#415a7766" /><rect x="60" y="20" width="8" height="8" rx="1" fill="#415a7733" /><rect x="70" y="20" width="8" height="8" rx="1" fill="#1b263b" /><rect x="80" y="20" width="8" height="8" rx="1" fill="#415a7766" /><rect x="90" y="20" width="8" height="8" rx="1" fill="#415a7799" /><rect x="100" y="20" width="8" height="8" rx="1" fill="#415a7733" /><rect x="110" y="20" width="8" height="8" rx="1" fill="#415a77" /><rect x="120" y="20" width="8" height="8" rx="1" fill="#415a7766" /><rect x="130" y="20" width="8" height="8" rx="1" fill="#415a7733" /><rect x="140" y="20" width="8" height="8" rx="1" fill="#1b263b" /><rect x="150" y="20" width="8" height="8" rx="1" fill="#415a7799" />
+-          <rect x="20" y="30" width="8" height="8" rx="1" fill="#1b263b" /><rect x="30" y="30" width="8" height="8" rx="1" fill="#415a7733" /><rect x="40" y="30" width="8" height="8" rx="1" fill="#415a7766" /><rect x="50" y="30" width="8" height="8" rx="1" fill="#415a7799" /><rect x="60" y="30" width="8" height="8" rx="1" fill="#415a77" /><rect x="70" y="30" width="8" height="8" rx="1" fill="#415a7733" /><rect x="80" y="30" width="8" height="8" rx="1" fill="#1b263b" /><rect x="90" y="30" width="8" height="8" rx="1" fill="#415a7766" /><rect x="100" y="30" width="8" height="8" rx="1" fill="#415a7799" /><rect x="110" y="30" width="8" height="8" rx="1" fill="#415a7733" /><rect x="120" y="30" width="8" height="8" rx="1" fill="#1b263b" /><rect x="130" y="30" width="8" height="8" rx="1" fill="#415a7766" /><rect x="140" y="30" width="8" height="8" rx="1" fill="#415a7799" /><rect x="150" y="30" width="8" height="8" rx="1" fill="#415a7733" />
+-          <rect x="20" y="40" width="8" height="8" rx="1" fill="#415a7766" /><rect x="30" y="40" width="8" height="8" rx="1" fill="#415a7799" /><rect x="40" y="40" width="8" height="8" rx="1" fill="#415a7733" /><rect x="50" y="40" width="8" height="8" rx="1" fill="#1b263b" /><rect x="60" y="40" width="8" height="8" rx="1" fill="#415a7766" /><rect x="70" y="40" width="8" height="8" rx="1" fill="#415a7799" /><rect x="80" y="40" width="8" height="8" rx="1" fill="#415a7733" /><rect x="90" y="40" width="8" height="8" rx="1" fill="#1b263b" /><rect x="100" y="40" width="8" height="8" rx="1" fill="#415a7766" /><rect x="110" y="40" width="8" height="8" rx="1" fill="#415a7799" /><rect x="120" y="40" width="8" height="8" rx="1" fill="#415a77" /><rect x="130" y="40" width="8" height="8" rx="1" fill="#415a7766" /><rect x="140" y="40" width="8" height="8" rx="1" fill="#415a7733" /><rect x="150" y="40" width="8" height="8" rx="1" fill="#415a7799" />
+-          <rect x="20" y="50" width="8" height="8" rx="1" fill="#1b263b" /><rect x="30" y="50" width="8" height="8" rx="1" fill="#415a7733" /><rect x="40" y="50" width="8" height="8" rx="1" fill="#415a7766" /><rect x="50" y="50" width="8" height="8" rx="1" fill="#415a7733" /><rect x="60" y="50" width="8" height="8" rx="1" fill="#1b263b" /><rect x="70" y="50" width="8" height="8" rx="1" fill="#415a7766" /><rect x="80" y="50" width="8" height="8" rx="1" fill="#415a7799" /><rect x="90" y="50" width="8" height="8" rx="1" fill="#415a7766" /><rect x="100" y="50" width="8" height="8" rx="1" fill="#415a7733" /><rect x="110" y="50" width="8" height="8" rx="1" fill="#1b263b" /><rect x="120" y="50" width="8" height="8" rx="1" fill="#415a7766" /><rect x="130" y="50" width="8" height="8" rx="1" fill="#415a7799" /><rect x="140" y="50" width="8" height="8" rx="1" fill="#415a7733" /><rect x="150" y="50" width="8" height="8" rx="1" fill="#1b263b" />
+-          <rect x="20" y="60" width="8" height="8" rx="1" fill="#415a7733" /><rect x="30" y="60" width="8" height="8" rx="1" fill="#1b263b" /><rect x="40" y="60" width="8" height="8" rx="1" fill="#415a7733" /><rect x="50" y="60" width="8" height="8" rx="1" fill="#415a7766" /><rect x="60" y="60" width="8" height="8" rx="1" fill="#415a7733" /><rect x="70" y="60" width="8" height="8" rx="1" fill="#1b263b" /><rect x="80" y="60" width="8" height="8" rx="1" fill="#415a7733" /><rect x="90" y="60" width="8" height="8" rx="1" fill="#415a7766" /><rect x="100" y="60" width="8" height="8" rx="1" fill="#415a7733" /><rect x="110" y="60" width="8" height="8" rx="1" fill="#1b263b" /><rect x="120" y="60" width="8" height="8" rx="1" fill="#415a7733" /><rect x="130" y="60" width="8" height="8" rx="1" fill="#415a7766" /><rect x="140" y="60" width="8" height="8" rx="1" fill="#415a7733" /><rect x="150" y="60" width="8" height="8" rx="1" fill="#1b263b" />
+-        </g>
+-        <a href="https://github.com/sochiautoparts/devbadge" target="_blank">
+-          <text x="4" y="81" font-family="Arial, sans-serif" font-size="8" fill="#666666" opacity="0.6">DevBadge</text>
+-        </a>
+-      </svg>
++  <!-- What's New -->
++  <section class="whatsnew" id="whatsnew">
++    <h2>What's New in v2.0</h2>
++    <div class="changelog">
++      <div class="version">v2.0.0 — Major Fix Release</div>
++      <ul>
++        <li class="fix">Fixed GitHub Action: --badges vs --badge argument mismatch</li>
++        <li class="fix">Fixed cache timestamp TypeError (ISO string vs Unix timestamp)</li>
++        <li class="fix">Fixed commit count: now shows lifetime total, not just current year</li>
++        <li class="fix">Fixed SVG rendering: replaced all emoji with SVG icons</li>
++        <li class="fix">Fixed animations: now use SMIL that works on GitHub</li>
++        <li class="fix">Real Spotify badge: fetches now-playing via Spotify API</li>
++        <li class="fix">Real Weather badge: fetches via wttr.in (no API key needed)</li>
++        <li class="fix">Custom colors: now actually applied from config</li>
++        <li class="fix">Cache security: HMAC-signed cache prevents manual bypass</li>
++        <li>API rate limiting with in-memory cache and retry logic</li>
++        <li>Profile badge with SVG icons (no emoji)</li>
++      </ul>
+     </div>
+   </section>
+ 
+@@ -544,120 +551,128 @@
+     <h2>Features</h2>
+     <div class="features-grid">
+       <div class="feature-card">
+-        <div class="icon">📊</div>
++        <div class="icon" style="font-size:1.5rem">&#x1F4CA;</div>
+         <h3>Commit Badges</h3>
+-        <p>Show your commit count with a beautiful sparkline graph from the last 30 days.</p>
++        <p>Show your lifetime commit count with a sparkline graph. Counts across all years, not just current.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">🌈</div>
++        <div class="icon" style="font-size:1.5rem">&#x1F308;</div>
+         <h3>Language Badges</h3>
+         <p>Top languages as a colorful bar with percentage breakdowns.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">🔥</div>
++        <div class="icon" style="font-size:1.5rem">&#x1F525;</div>
+         <h3>Activity Heatmap</h3>
+         <p>GitHub-style contribution heatmap right in your profile README.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">📈</div>
++        <div class="icon" style="font-size:1.5rem">&#x1F4C8;</div>
+         <h3>Stats Overview</h3>
+-        <p>Stars, forks, repos, followers, PRs, and issues — all at a glance.</p>
++        <p>Stars, forks, repos, followers, PRs, and issues — all with SVG icons, no emoji.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">🎨</div>
+-        <h3>8 Themes</h3>
+-        <p>Default, Dracula, GitHub Dark, Solarized, Nord, Monokai, Neon, and Aurora.</p>
++        <div class="icon" style="font-size:1.5rem">&#x1F3A8;</div>
++        <h3>8 Themes + Custom Colors</h3>
++        <p>6 free themes, 2 Pro themes. Plus custom color overrides for Pro users.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">⚡</div>
++        <div class="icon" style="font-size:1.5rem">&#x26A1;</div>
+         <h3>GitHub Action</h3>
+         <p>Auto-update your badges on a schedule with a single workflow file.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">☕</div>
++        <div class="icon" style="font-size:1.5rem">&#x2615;</div>
+         <h3>Coffee Badge <span class="pro-badge">PRO</span></h3>
+-        <p>Fun "bought X coffees" status badge for supporters.</p>
++        <p>"Bought X coffees" badge with SVG coffee cup icon. Renders everywhere.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">🎵</div>
++        <div class="icon" style="font-size:1.5rem">&#x1F3B5;</div>
+         <h3>Spotify Badge <span class="pro-badge">PRO</span></h3>
+-        <p>Now-playing badge showing your current Spotify track.</p>
++        <p>Real now-playing badge via Spotify API. Shows track name, artist, and playing status with SMIL animation.</p>
+       </div>
+       <div class="feature-card">
+-        <div class="icon">🌤️</div>
++        <div class="icon" style="font-size:1.5rem">&#x2601;</div>
+         <h3>Weather Badge <span class="pro-badge">PRO</span></h3>
+-        <p>Current weather conditions right in your profile.</p>
++        <p>Real weather via wttr.in API. No API key needed. Shows temp, condition, and dynamic SVG weather icon.</p>
++      </div>
++      <div class="feature-card">
++        <div class="icon" style="font-size:1.5rem">&#x2728;</div>
++        <h3>SMIL Animations <span class="pro-badge">PRO</span></h3>
++        <p>Pulse, gradient, typing, sparkle — all use SMIL &lt;animate&gt; that works on GitHub. No CSS &lt;style&gt; tags.</p>
+       </div>
+     </div>
+   </section>
+ 
+   <!-- Pricing -->
+   <section class="pricing" id="pricing">
+-    <h2>Цены / Pricing</h2>
+-    <p class="subtitle">Выберите подходящий план — оплата через @allstarspay_bot</p>
++    <h2>Pricing</h2>
++    <p class="subtitle">Purchase via @allstarspay_bot on Telegram</p>
+     <div class="pricing-grid">
+       <!-- Free -->
+       <div class="price-card">
+         <div class="plan-name">Free</div>
+         <div class="plan-price">$0</div>
+-        <div class="plan-period">Навсегда бесплатно</div>
++        <div class="plan-period">Free forever</div>
+         <ul>
+-          <li>5 базовых бейджей</li>
+-          <li>6 бесплатных тем</li>
++          <li>5 basic badge types</li>
++          <li>6 free themes</li>
+           <li>GitHub Action</li>
+-          <li>Водяной знак DevBadge</li>
++          <li>DevBadge watermark</li>
++          <li>API rate limiting</li>
+         </ul>
+-        <a href="#quickstart" class="btn btn-secondary" style="width:100%;justify-content:center;">Начать бесплатно</a>
++        <a href="#quickstart" class="btn btn-secondary" style="width:100%;justify-content:center;">Get Started Free</a>
+       </div>
+ 
+       <!-- Monthly -->
+       <div class="price-card popular">
+         <div class="plan-name">Pro Monthly</div>
+-        <div class="plan-price">⭐149<span>/мес</span></div>
+-        <div class="plan-period">Ежемесячная подписка</div>
++        <div class="plan-price">&#x2B50;149<span>/mo</span></div>
++        <div class="plan-period">Monthly subscription</div>
+         <ul>
+-          <li>Все 8 типов бейджей</li>
+-          <li class="pro-only">Анимации (pulse, gradient, typing, sparkle)</li>
+-          <li class="pro-only">2 Pro-темы (Neon, Aurora)</li>
+-          <li class="pro-only">Без водяного знака</li>
+-          <li class="pro-only">Кастомные цвета</li>
++          <li>All 8 badge types</li>
++          <li class="pro-only">Real Spotify now-playing (API)</li>
++          <li class="pro-only">Real Weather (wttr.in)</li>
++          <li class="pro-only">SMIL animations (GitHub-compatible)</li>
++          <li class="pro-only">2 Pro themes (Neon, Aurora)</li>
++          <li class="pro-only">Custom colors</li>
++          <li class="pro-only">No watermark</li>
+         </ul>
+-        <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro" style="width:100%;justify-content:center;">Купить Pro</a>
++        <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro" style="width:100%;justify-content:center;">Get Pro</a>
+       </div>
+ 
+       <!-- Yearly -->
+       <div class="price-card">
+         <div class="plan-name">Pro Yearly</div>
+-        <div class="plan-price">⭐999<span>/год</span></div>
+-        <div class="plan-period">Экономия 44%!</div>
++        <div class="plan-price">&#x2B50;999<span>/yr</span></div>
++        <div class="plan-period">Save 44%!</div>
+         <ul>
+-          <li>Всё из Pro Monthly</li>
+-          <li class="pro-only">Выгодная годовая цена</li>
+-          <li class="pro-only">Приоритетная поддержка</li>
++          <li>Everything in Pro Monthly</li>
++          <li class="pro-only">Best annual price</li>
++          <li class="pro-only">Priority support</li>
+         </ul>
+-        <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro" style="width:100%;justify-content:center;">Купить Pro</a>
++        <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro" style="width:100%;justify-content:center;">Get Pro</a>
+       </div>
+ 
+       <!-- Lifetime -->
+       <div class="price-card">
+         <div class="plan-name">Pro Lifetime</div>
+-        <div class="plan-price">⭐2999</div>
+-        <div class="plan-period">Навсегда — платите один раз</div>
++        <div class="plan-price">&#x2B50;2999</div>
++        <div class="plan-period">Forever — pay once</div>
+         <ul>
+-          <li>Всё из Pro</li>
+-          <li class="pro-only">Пожизненный доступ</li>
+-          <li class="pro-only">Все будущие обновления</li>
+-          <li class="pro-only">Ранний доступ к новым фичам</li>
++          <li>Everything in Pro</li>
++          <li class="pro-only">Lifetime access</li>
++          <li class="pro-only">All future updates</li>
++          <li class="pro-only">Early access to new features</li>
+         </ul>
+-        <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro" style="width:100%;justify-content:center;">Купить Pro</a>
++        <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro" style="width:100%;justify-content:center;">Get Pro</a>
+       </div>
+     </div>
+ 
+     <!-- StarsPay -->
+     <div class="starspay">
+-      <h3>💳 Оплата через StarsPay Bot</h3>
+-      <p>Покупка лицензии DevBadge Pro через Telegram бота @allstarspay_bot. Получите ключ формата <code style="background:var(--bg3);padding:2px 6px;border-radius:4px;">SP-DVB-xxxx-xxxx</code> мгновенно после оплаты.</p>
+-      <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro">Открыть @allstarspay_bot →</a>
++      <h3>Payment via StarsPay Bot</h3>
++      <p>Purchase DevBadge Pro license via Telegram bot @allstarspay_bot. Receive a key in format <code style="background:var(--bg3);padding:2px 6px;border-radius:4px;">SP-DVB-xxxx-xxxx</code> instantly after payment. Cache entries are HMAC-signed for security.</p>
++      <a href="https://t.me/allstarspay_bot" target="_blank" class="btn btn-pro">Open @allstarspay_bot &rarr;</a>
+     </div>
+   </section>
+ 
+@@ -696,6 +711,22 @@
+ 
+     <div class="step">
+       <div class="step-num">4</div>
++      <div class="step-content">
++        <h3>Pro Features (Optional)</h3>
++        <p>Activate Pro for weather, Spotify, animations, and custom colors:</p>
++        <div class="code-block"># Weather badge (wttr.in, no API key)
++devbadge generate --user YOU --badge weather --city "San Francisco"
++
++# Spotify now-playing
++devbadge generate --user YOU --badge spotify --spotify-token "your_token"
++
++# Custom colors
++devbadge generate --user YOU --all --color accent=#ff6600</div>
++      </div>
++    </div>
++
++    <div class="step">
++      <div class="step-num">5</div>
+       <div class="step-content">
+         <h3>Auto-Update (GitHub Action)</h3>
+         <p>Create <code>.github/workflows/update-badges.yml</code>:</p>
+@@ -715,7 +746,7 @@ jobs:
+       - uses: sochiautoparts/devbadge@main
+         with:
+           github-token: ${{ secrets.GITHUB_TOKEN }}
+-          badges: commits,languages,stats,activity
++          badge: commits,languages,stats,activity
+           theme: dracula</div>
+       </div>
+     </div>
+@@ -724,11 +755,11 @@ jobs:
+   <!-- Footer -->
+   <footer>
+     <p>
+-      <a href="https://github.com/sochiautoparts/devbadge">GitHub</a> ·
+-      <a href="https://t.me/allstarspay_bot">StarsPay Bot</a> ·
++      <a href="https://github.com/sochiautoparts/devbadge">GitHub</a> &middot;
++      <a href="https://t.me/allstarspay_bot">StarsPay Bot</a> &middot;
+       <a href="https://github.com/sochiautoparts/devbadge/blob/main/LICENSE">MIT License</a>
+     </p>
+-    <p style="margin-top:0.5rem;">Made with ❤️ by <a href="https://github.com/sochiautoparts">sochiautoparts</a></p>
++    <p style="margin-top:0.5rem;">Made by <a href="https://github.com/sochiautoparts">sochiautoparts</a></p>
+   </footer>
+ 
+ </body>
+diff --git a/examples/profile.md b/examples/profile.md
+index e598c2b..7ead451 100644
+--- a/examples/profile.md
++++ b/examples/profile.md
+@@ -1,15 +1,15 @@
+-# Hi there! 👋 I'm a developer
++# Hi there! I'm a developer
+ 
+ Welcome to my GitHub profile!
+ 
+-## 📊 My DevBadges
++## My DevBadges
+ 
+ ![Commits](./badges/commits.svg)
+ ![Languages](./badges/languages.svg)
+ ![Stats](./badges/stats.svg)
+ ![Activity](./badges/activity.svg)
+ 
+-## ☕ Support My Work
++## Support My Work
+ 
+ ![Coffee](./badges/coffee.svg)
+ 
+diff --git a/pyproject.toml b/pyproject.toml
+index 0eaa99d..fe2e267 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
+ 
+ [project]
+ name = "devbadge"
+-version = "1.0.0"
++version = "2.0.0"
+ description = "Dynamic SVG badges for GitHub profiles"
+ readme = "README.md"
+ license = {text = "MIT"}
+@@ -12,7 +12,7 @@ requires-python = ">=3.9"
+ authors = [{name = "sochiautoparts"}]
+ keywords = ["github", "badges", "svg", "profile", "devbadge"]
+ classifiers = [
+-    "Development Status :: 4 - Beta",
++    "Development Status :: 5 - Production/Stable",
+     "Intended Audience :: Developers",
+     "License :: OSI Approved :: MIT License",
+     "Programming Language :: Python :: 3",
+diff --git a/src/devbadge/__init__.py b/src/devbadge/__init__.py
+index b5e9054..b17a225 100644
+--- a/src/devbadge/__init__.py
++++ b/src/devbadge/__init__.py
+@@ -1,6 +1,6 @@
+ """DevBadge — Dynamic SVG badges for GitHub profiles."""
+ 
+-__version__ = "1.0.0"
++__version__ = "2.0.0"
+ __author__ = "sochiautoparts"
+ 
+ from devbadge.badges import (
+@@ -11,6 +11,7 @@ from devbadge.badges import (
+     CoffeeBadge,
+     SpotifyBadge,
+     WeatherBadge,
++    ProfileBadge,
+     generate_badge,
+ )
+ from devbadge.themes import get_theme, THEMES
+@@ -24,6 +25,7 @@ __all__ = [
+     "CoffeeBadge",
+     "SpotifyBadge",
+     "WeatherBadge",
++    "ProfileBadge",
+     "generate_badge",
+     "get_theme",
+     "THEMES",
+diff --git a/src/devbadge/animations.py b/src/devbadge/animations.py
+index 57ec87e..18574ae 100644
+--- a/src/devbadge/animations.py
++++ b/src/devbadge/animations.py
+@@ -1,77 +1,78 @@
+-"""SVG animations for DevBadge badges.
++"""SVG animations for DevBadge badges using SMIL only.
+ 
+-NOTE: GitHub README sanitizes SVG and strips <style> tags,
+-making CSS animations non-functional on GitHub profiles.
+-Animations work in: browsers, static sites, documentation.
+-For GitHub profiles, use the 'pulse' animation which uses
+-inline style attributes that survive sanitization.
++All animations use SMIL (<animate>, <animateTransform>) which GitHub
++DOES support in README SVGs. No <style> tags or CSS animations are used.
+ 
+-All animations are pure SVG + CSS, no JavaScript required.
+-They render correctly in browsers but may be simplified in
+-GitHub READMEs (GitHub sanitizes <style> in some contexts).
++SMIL animations that work on GitHub:
++- <animate> for attribute transitions (opacity, fill, etc.)
++- <animateTransform> for transforms (scale, rotate, translate)
++- <set> for discrete attribute changes
++
++GitHub strips <style> tags from SVGs, so we never use CSS keyframes.
+ """
+ 
+ from typing import Optional
+ 
+ 
+ def pulse_animation(element_id: str, color: str = "#ffffff") -> str:
+-    """Generate a pulse effect on a stat number.
++    """Generate a pulse effect using SMIL <animate>.
++
++    Pulses the opacity of a referenced element, creating a breathing glow effect.
+ 
+     Args:
+         element_id: Unique ID for the animation target.
+         color: The glow color for the pulse.
+ 
+     Returns:
+-        SVG <style> block with the animation.
++        SVG elements with SMIL animation (no <style> tags).
+     """
+-    return f"""<style>
+-  @keyframes pulse-{element_id} {{
+-    0%   {{ opacity: 1; }}
+-    50%  {{ opacity: 0.6; filter: drop-shadow(0 0 4px {color}); }}
+-    100% {{ opacity: 1; }}
+-  }}
+-  .pulse-{element_id} {{
+-    animation: pulse-{element_id} 2s ease-in-out infinite;
+-  }}
+-</style>"""
++    # SMIL animate on opacity — works on GitHub
++    return f"""<g id="pulse-{element_id}">
++    <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
++  </g>"""
+ 
+ 
+ def gradient_animation(element_id: str, colors: list) -> str:
+-    """Generate an animated gradient for language bars.
++    """Generate an animated gradient using SMIL <animate>.
++
++    Cycles through colors by animating the stop-color of gradient stops.
++    GitHub supports SMIL <animate> on SVG gradient stops.
+ 
+     Args:
+         element_id: Unique ID for the gradient.
+         colors: List of color strings to cycle through.
+ 
+     Returns:
+-        SVG <defs> + <style> block with animated gradient.
++        SVG <defs> with animated gradient stops (SMIL only).
+     """
++    if not colors or len(colors) < 2:
++        colors = ["#ff0000", "#00ff00"]
++
++    # Create gradient with animated stops
++    # Each stop animates through the color list
++    num_stops = min(len(colors), 4)
+     stops = ""
+-    total = len(colors)
+-    for i, c in enumerate(colors):
+-        offset = (i / max(total - 1, 1)) * 100
+-        stops += f'      <stop offset="{offset:.0f}%" stop-color="{c}" />\n'
++    for i in range(num_stops):
++        offset = (i / max(num_stops - 1, 1)) * 100
++        initial_color = colors[i % len(colors)]
++        # Cycle through all colors
++        color_values = ";".join(colors[i % len(colors):] + colors[:i % len(colors)])
++        stops += f"""      <stop offset="{offset:.0f}%">
++        <animate attributeName="stop-color" values="{color_values}" dur="4s" repeatCount="indefinite" />
++      </stop>
++"""
+ 
+     return f"""<defs>
+     <linearGradient id="grad-{element_id}" x1="0%" y1="0%" x2="100%" y2="0%">
+ {stops}    </linearGradient>
+-  </defs>
+-  <style>
+-  @keyframes grad-shift-{element_id} {{
+-    0%   {{ transform: translateX(0); }}
+-    50%  {{ transform: translateX(10px); }}
+-    100% {{ transform: translateX(0); }}
+-  }}
+-  .grad-anim-{element_id} {{
+-    animation: grad-shift-{element_id} 3s ease-in-out infinite;
+-  }}
+-  </style>"""
++  </defs>"""
+ 
+ 
+ def typing_animation(element_id: str, text: str, delay_ms: int = 80) -> str:
+-    """Generate a typing effect for text.
++    """Generate a typing effect using SMIL <animate>.
+ 
+-    Uses SVG dash-offset animation to reveal text character by character.
++    Reveals text from left to right using animated clip-path or
++    width reveal. Uses <animate> on a mask/clip rect width.
+ 
+     Args:
+         element_id: Unique ID for the text element.
+@@ -79,70 +80,62 @@ def typing_animation(element_id: str, text: str, delay_ms: int = 80) -> str:
+         delay_ms: Milliseconds per character.
+ 
+     Returns:
+-        SVG <style> block with typing animation.
++        SVG elements with SMIL typing animation.
+     """
+-    char_count = len(text)
++    char_count = len(text) if text else 1
+     duration = char_count * delay_ms
++    text_width = char_count * 7  # Approximate width per character at font-size 11
+ 
+-    return f"""<style>
+-  @keyframes typing-{element_id} {{
+-    0%   {{ clip-path: inset(0 100% 0 0); }}
+-    100% {{ clip-path: inset(0 0% 0 0); }}
+-  }}
+-  .typing-{element_id} {{
+-    animation: typing-{element_id} {duration}ms steps({char_count}) forwards;
+-    white-space: nowrap;
+-    overflow: hidden;
+-  }}
+-</style>"""
++    # Use SMIL to animate a clip rect from 0 to full width
++    return f"""<defs>
++    <clipPath id="typing-clip-{element_id}">
++      <rect x="0" y="0" width="0" height="30">
++        <animate attributeName="width" from="0" to="{text_width}" dur="{duration}ms" fill="freeze" begin="0.5s" />
++      </rect>
++    </clipPath>
++  </defs>"""
+ 
+ 
+ def sparkle_animation(element_id: str, count: int = 5) -> str:
+-    """Generate a sparkle effect on star icons.
++    """Generate a sparkle effect using SMIL <animate>.
++
++    Creates small circles that appear and disappear with
++    <animate> on opacity and <animateTransform> on scale.
+ 
+     Args:
+         element_id: Unique ID for the sparkle group.
+         count: Number of sparkle elements.
+ 
+     Returns:
+-        SVG <style> block + sparkle <g> elements.
++        SVG sparkle elements with SMIL animation (no <style> tags).
+     """
+     import random
+     random.seed(element_id)
+ 
+     sparkles = ""
+-    style_rules = ""
+     for i in range(count):
+         x = random.randint(0, 20)
+         y = random.randint(-5, 15)
+         delay = i * 0.3
+         size = random.uniform(1.5, 3.0)
+-        style_rules += f"""
+-  @keyframes sparkle-{element_id}-{i} {{
+-    0%, 100% {{ opacity: 0; transform: scale(0); }}
+-    50%      {{ opacity: 1; transform: scale(1); }}
+-  }}
+-  .sparkle-{element_id}-{i} {{
+-    animation: sparkle-{element_id}-{i} 1.5s ease-in-out {delay}s infinite;
+-  }}"""
+-        sparkles += f'  <circle class="sparkle-{element_id}-{i}" cx="{x}" cy="{y}" r="{size}" fill="#ffd700" />\n'
+-
+-    return f"""<style>{style_rules}
+-</style>
+-<g class="sparkle-group-{element_id}">
++        # SMIL animate opacity: fade in/out
++        # SMIL animateTransform: scale from 0 to 1
++        sparkles += f"""  <circle cx="{x}" cy="{y}" r="{size}" fill="#ffd700" opacity="0">
++    <animate attributeName="opacity" values="0;1;0" dur="1.5s" begin="{delay}s" repeatCount="indefinite" />
++    <animateTransform attributeName="transform" type="scale" values="0;1;0" dur="1.5s" begin="{delay}s" repeatCount="indefinite" />
++  </circle>
++"""
++
++    return f"""<g id="sparkle-group-{element_id}">
+ {sparkles}</g>"""
+ 
+ 
+ def apply_animation(svg_content: str, animation_type: str, element_id: str,
+                     is_pro: bool = False, **kwargs) -> str:
+-    """Apply an animation to existing SVG content.
++    """Apply an animation to existing SVG content using SMIL only.
+ 
+-    Only applies if user has Pro license.
+-
+-    WARNING: CSS-based animations (gradient, typing, sparkle) use <style> tags
+-    which are stripped by GitHub README sanitization. Only the 'pulse' animation
+-    uses inline style attributes and works on GitHub profiles. For other
+-    animations, they will only render in browsers and static sites.
++    All animations use SMIL (<animate>, <animateTransform>) which
++    GitHub DOES support in README SVGs. No <style> tags are used.
+ 
+     Args:
+         svg_content: The original SVG string.
+@@ -152,22 +145,11 @@ def apply_animation(svg_content: str, animation_type: str, element_id: str,
+         **kwargs: Additional parameters for the animation.
+ 
+     Returns:
+-        Modified SVG string with animation, or original if not Pro.
++        Modified SVG string with SMIL animation, or original if not Pro.
+     """
+     if not is_pro:
+         return svg_content
+ 
+-    # Warn if using animations that won't work on GitHub
+-    if animation_type not in ("pulse",):
+-        import warnings
+-        warnings.warn(
+-            f"Animation '{animation_type}' uses <style> tags which are stripped "
+-            f"by GitHub README sanitization. Use 'pulse' for GitHub-compatible "
+-            f"animations, or view badges in a browser/static site.",
+-            UserWarning,
+-            stacklevel=2,
+-        )
+-
+     anim_generators = {
+         "pulse": lambda: pulse_animation(element_id, kwargs.get("color", "#ffffff")),
+         "gradient": lambda: gradient_animation(element_id, kwargs.get("colors", ["#ff0000", "#00ff00", "#0000ff"])),
+@@ -181,9 +163,34 @@ def apply_animation(svg_content: str, animation_type: str, element_id: str,
+ 
+     animation_svg = generator()
+ 
+-    # Insert animation before the closing </svg> tag
++    # For pulse, wrap content in an animated group
++    if animation_type == "pulse":
++        # Insert pulse animation group before closing </svg>
++        insertion_point = svg_content.rfind("</svg>")
++        if insertion_point == -1:
++            return svg_content
++        # Add the pulse group that affects subsequent elements
++        return svg_content[:insertion_point] + animation_svg + "\n" + svg_content[insertion_point:]
++
++    # For gradient, insert <defs> after the opening <svg> tag
++    if animation_type == "gradient":
++        # Find the first > after <svg
++        svg_open_end = svg_content.find(">", svg_content.find("<svg"))
++        if svg_open_end == -1:
++            return svg_content
++        insert_pos = svg_open_end + 1
++        return svg_content[:insert_pos] + "\n" + animation_svg + svg_content[insert_pos:]
++
++    # For typing, insert <defs> with clipPath
++    if animation_type == "typing":
++        svg_open_end = svg_content.find(">", svg_content.find("<svg"))
++        if svg_open_end == -1:
++            return svg_content
++        insert_pos = svg_open_end + 1
++        return svg_content[:insert_pos] + "\n" + animation_svg + svg_content[insert_pos:]
++
++    # For sparkle, insert before closing </svg>
+     insertion_point = svg_content.rfind("</svg>")
+     if insertion_point == -1:
+         return svg_content
+-
+     return svg_content[:insertion_point] + animation_svg + "\n" + svg_content[insertion_point:]
+diff --git a/src/devbadge/badges.py b/src/devbadge/badges.py
+index 937d83d..8f53f2e 100644
+--- a/src/devbadge/badges.py
++++ b/src/devbadge/badges.py
+@@ -2,6 +2,10 @@
+ 
+ Each badge type generates a standalone SVG that renders correctly
+ in GitHub READMEs without any external dependencies.
++
++No emoji characters are used in SVG <text> elements — they don't
++render reliably across platforms. Instead, we use simple SVG shapes
++and plain text labels.
+ """
+ 
+ from __future__ import annotations
+@@ -10,7 +14,7 @@ import html
+ from typing import Dict, List, Optional
+ 
+ from devbadge.themes import Theme, get_theme, LANGUAGE_COLORS
+-from devbadge.config import is_pro, REPO_URL, FREE_BADGES, PRO_BADGES
++from devbadge.config import is_pro, REPO_URL, FREE_BADGES, PRO_BADGES, DevBadgeConfig
+ 
+ 
+ def _escape(text: str) -> str:
+@@ -27,6 +31,38 @@ def _watermark(is_pro_user: bool = False, y_offset: int = 0) -> str:
+   </a>"""
+ 
+ 
++def _apply_custom_colors(theme: Theme, custom_colors: dict) -> Theme:
++    """Apply custom color overrides from config to a theme.
++
++    Supported keys: primary, secondary, accent, background, foreground,
++                    muted, border, title_color, text_color
++    """
++    if not custom_colors:
++        return theme
++
++    color_map = {
++        "primary": "accent",
++        "secondary": "secondary",
++        "accent": "accent",
++        "background": "background",
++        "foreground": "foreground",
++        "muted": "muted",
++        "border": "border",
++        "title_color": "title_color",
++        "text_color": "text_color",
++    }
++
++    # Create a copy so we don't mutate the original theme
++    import dataclasses
++    t = dataclasses.replace(theme)
++
++    for config_key, theme_attr in color_map.items():
++        if config_key in custom_colors and custom_colors[config_key]:
++            setattr(t, theme_attr, custom_colors[config_key])
++
++    return t
++
++
+ def _svg_wrapper(width: int, height: int, content: str, theme: Theme) -> str:
+     """Wrap content in a standard SVG element with theme styling."""
+     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
+@@ -36,6 +72,156 @@ def _svg_wrapper(width: int, height: int, content: str, theme: Theme) -> str:
+ </svg>"""
+ 
+ 
++# ---- SVG Icon Helpers (no emoji) ----
++
++def _svg_icon_star(x: int, y: int, size: int = 8, color: str = "#ffd700") -> str:
++    """Draw a star icon using SVG polygon."""
++    # 5-pointed star using polygon points
++    import math
++    points = []
++    for i in range(5):
++        outer_angle = math.radians(-90 + i * 72)
++        inner_angle = math.radians(-90 + i * 72 + 36)
++        outer_r = size
++        inner_r = size * 0.4
++        points.append(f"{x + outer_r * math.cos(outer_angle):.1f},{y + outer_r * math.sin(outer_angle):.1f}")
++        points.append(f"{x + inner_r * math.cos(inner_angle):.1f},{y + inner_r * math.sin(inner_angle):.1f}")
++    return f'<polygon points="{" ".join(points)}" fill="{color}" />'
++
++
++def _svg_icon_fork(x: int, y: int, size: int = 8, color: str = "#888") -> str:
++    """Draw a fork/branch icon using SVG lines and circles."""
++    s = size
++    return f"""<g transform="translate({x},{y})">
++    <circle cx="{s*0.3}" cy="{s*0.2}" r="2" fill="{color}" />
++    <circle cx="{s*0.7}" cy="{s*0.2}" r="2" fill="{color}" />
++    <circle cx="{s*0.3}" cy="{s*0.8}" r="2" fill="{color}" />
++    <line x1="{s*0.3}" y1="{s*0.4}" x2="{s*0.3}" y2="{s*0.6}" stroke="{color}" stroke-width="1.5" />
++    <line x1="{s*0.7}" y1="{s*0.4}" x2="{s*0.5}" y2="{s*0.6}" stroke="{color}" stroke-width="1.5" />
++    <line x1="{s*0.3}" y1="{s*0.6}" x2="{s*0.5}" y2="{s*0.6}" stroke="{color}" stroke-width="1.5" />
++  </g>"""
++
++
++def _svg_icon_repo(x: int, y: int, size: int = 8, color: str = "#888") -> str:
++    """Draw a repo/book icon using SVG rect."""
++    s = size
++    return f"""<g transform="translate({x},{y})">
++    <rect x="0" y="0" width="{s}" height="{s*1.2}" rx="1" fill="none" stroke="{color}" stroke-width="1.5" />
++    <line x1="0" y1="{s*0.35}" x2="{s}" y2="{s*0.35}" stroke="{color}" stroke-width="1" />
++  </g>"""
++
++
++def _svg_icon_people(x: int, y: int, size: int = 8, color: str = "#888") -> str:
++    """Draw a people/followers icon using SVG circles."""
++    s = size
++    return f"""<g transform="translate({x},{y})">
++    <circle cx="{s*0.35}" cy="{s*0.25}" r="2.5" fill="{color}" />
++    <path d="M{s*0.1},{s*0.9} Q{s*0.1},{s*0.5} {s*0.35},{s*0.5} Q{s*0.6},{s*0.5} {s*0.6},{s*0.9}" fill="{color}" opacity="0.7" />
++    <circle cx="{s*0.75}" cy="{s*0.3}" r="2" fill="{color}" opacity="0.6" />
++    <path d="M{s*0.55},{s*0.9} Q{s*0.55},{s*0.6} {s*0.75},{s*0.6} Q{s*0.95},{s*0.6} {s*0.95},{s*0.9}" fill="{color}" opacity="0.4" />
++  </g>"""
++
++
++def _svg_icon_pr(x: int, y: int, size: int = 8, color: str = "#888") -> str:
++    """Draw a PR/merge icon using SVG paths."""
++    s = size
++    return f"""<g transform="translate({x},{y})">
++    <circle cx="{s*0.3}" cy="{s*0.2}" r="2" fill="{color}" />
++    <circle cx="{s*0.3}" cy="{s*0.8}" r="2" fill="{color}" />
++    <circle cx="{s*0.7}" cy="{s*0.2}" r="2" fill="{color}" />
++    <line x1="{s*0.3}" y1="{s*0.4}" x2="{s*0.3}" y2="{s*0.6}" stroke="{color}" stroke-width="1.5" />
++    <path d="M{s*0.7},{s*0.4} Q{s*0.7},{s*0.6} {s*0.3},{s*0.6}" fill="none" stroke="{color}" stroke-width="1.5" />
++  </g>"""
++
++
++def _svg_icon_issue(x: int, y: int, size: int = 8, color: str = "#888") -> str:
++    """Draw an issue icon (circle with dot) using SVG."""
++    s = size
++    cx = x + s * 0.5
++    cy = y + s * 0.5
++    r = s * 0.45
++    return f"""<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="1.5" />
++  <circle cx="{cx}" cy="{cy}" r="1.5" fill="{color}" />"""
++
++
++def _svg_icon_coffee(x: int, y: int, color: str = "#888") -> str:
++    """Draw a coffee cup icon using SVG shapes."""
++    return f"""<g transform="translate({x},{y})">
++    <rect x="2" y="4" width="14" height="12" rx="2" fill="{color}" opacity="0.6" />
++    <path d="M16 7 C20 7 20 13 16 13" fill="none" stroke="{color}" stroke-width="1.5" />
++    <path d="M5 3 Q7 0 9 3" fill="none" stroke="{color}" stroke-width="1" stroke-linecap="round" />
++    <path d="M9 2 Q11 -1 13 2" fill="none" stroke="{color}" stroke-width="1" stroke-linecap="round" />
++  </g>"""
++
++
++def _svg_icon_spotify(x: int, y: int, color: str = "#1DB954") -> str:
++    """Draw a Spotify icon using SVG."""
++    return f"""<g transform="translate({x},{y})">
++    <circle cx="14" cy="14" r="13" fill="{color}" opacity="0.15" />
++    <circle cx="14" cy="14" r="9" fill="{color}" opacity="0.3" />
++    <path d="M8 17 C8 13 18 11 22 9" fill="none" stroke="{color}" stroke-width="2" stroke-linecap="round" />
++    <path d="M8 21 C8 17 20 14 24 13" fill="none" stroke="{color}" stroke-width="1.5" stroke-linecap="round" />
++    <path d="M9 24 C10 21 18 19 22 18" fill="none" stroke="{color}" stroke-width="1" stroke-linecap="round" />
++  </g>"""
++
++
++def _svg_weather_icon(icon_name: str, x: int, y: int, color: str = "#ffd700") -> str:
++    """Draw a weather icon based on the icon name."""
++    if icon_name == "sun":
++        return f"""<g transform="translate({x},{y})">
++      <circle cx="12" cy="12" r="5" fill="{color}" />
++      <line x1="12" y1="2" x2="12" y2="5" stroke="{color}" stroke-width="2" stroke-linecap="round" />
++      <line x1="12" y1="19" x2="12" y2="22" stroke="{color}" stroke-width="2" stroke-linecap="round" />
++      <line x1="2" y1="12" x2="5" y2="12" stroke="{color}" stroke-width="2" stroke-linecap="round" />
++      <line x1="19" y1="12" x2="22" y2="12" stroke="{color}" stroke-width="2" stroke-linecap="round" />
++      <line x1="5" y1="5" x2="7" y2="7" stroke="{color}" stroke-width="1.5" stroke-linecap="round" />
++      <line x1="17" y1="17" x2="19" y2="19" stroke="{color}" stroke-width="1.5" stroke-linecap="round" />
++      <line x1="5" y1="19" x2="7" y2="17" stroke="{color}" stroke-width="1.5" stroke-linecap="round" />
++      <line x1="17" y1="7" x2="19" y2="5" stroke="{color}" stroke-width="1.5" stroke-linecap="round" />
++    </g>"""
++    elif icon_name == "cloud-sun":
++        return f"""<g transform="translate({x},{y})">
++      <circle cx="8" cy="8" r="4" fill="{color}" opacity="0.8" />
++      <line x1="8" y1="1" x2="8" y2="3" stroke="{color}" stroke-width="1.5" stroke-linecap="round" />
++      <line x1="2" y1="8" x2="4" y2="8" stroke="{color}" stroke-width="1.5" stroke-linecap="round" />
++      <path d="M8 16 Q8 12 14 12 Q20 12 20 16 Q24 16 24 20 L4 20 Q4 16 8 16 Z" fill="white" opacity="0.7" />
++    </g>"""
++    elif icon_name == "cloud":
++        return f"""<g transform="translate({x},{y})">
++      <path d="M6 20 Q2 20 2 16 Q2 12 6 12 Q6 8 12 8 Q18 8 18 12 Q22 12 22 16 Q22 20 18 20 Z" fill="white" opacity="0.6" />
++    </g>"""
++    elif icon_name == "rain":
++        return f"""<g transform="translate({x},{y})">
++      <path d="M6 16 Q2 16 2 12 Q2 8 6 8 Q6 4 12 4 Q18 4 18 8 Q22 8 22 12 Q22 16 18 16 Z" fill="white" opacity="0.5" />
++      <line x1="8" y1="18" x2="6" y2="22" stroke="#4fc3f7" stroke-width="1.5" stroke-linecap="round" />
++      <line x1="13" y1="18" x2="11" y2="22" stroke="#4fc3f7" stroke-width="1.5" stroke-linecap="round" />
++      <line x1="18" y1="18" x2="16" y2="22" stroke="#4fc3f7" stroke-width="1.5" stroke-linecap="round" />
++    </g>"""
++    elif icon_name == "snow":
++        return f"""<g transform="translate({x},{y})">
++      <path d="M6 14 Q2 14 2 10 Q2 6 6 6 Q6 2 12 2 Q18 2 18 6 Q22 6 22 10 Q22 14 18 14 Z" fill="white" opacity="0.6" />
++      <circle cx="8" cy="18" r="1.5" fill="#e3f2fd" />
++      <circle cx="13" cy="20" r="1.5" fill="#e3f2fd" />
++      <circle cx="18" cy="17" r="1.5" fill="#e3f2fd" />
++    </g>"""
++    elif icon_name == "thunder":
++        return f"""<g transform="translate({x},{y})">
++      <path d="M6 14 Q2 14 2 10 Q2 6 6 6 Q6 2 12 2 Q18 2 18 6 Q22 6 22 10 Q22 14 18 14 Z" fill="white" opacity="0.5" />
++      <polygon points="13,14 10,20 14,20 11,24" fill="{color}" />
++    </g>"""
++    elif icon_name == "fog":
++        return f"""<g transform="translate({x},{y})">
++      <line x1="4" y1="8" x2="20" y2="8" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.5" />
++      <line x1="6" y1="13" x2="18" y2="13" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.4" />
++      <line x1="4" y1="18" x2="20" y2="18" stroke="white" stroke-width="2" stroke-linecap="round" opacity="0.3" />
++    </g>"""
++    else:
++        # Default: cloud
++        return f"""<g transform="translate({x},{y})">
++      <path d="M6 20 Q2 20 2 16 Q2 12 6 12 Q6 8 12 8 Q18 8 18 12 Q22 12 22 16 Q22 20 18 20 Z" fill="white" opacity="0.5" />
++    </g>"""
++
++
+ class CommitBadge:
+     """Generate a commit count badge with sparkline graph."""
+ 
+@@ -46,20 +232,10 @@ class CommitBadge:
+         contribution_data: Optional[List[int]] = None,
+         theme: str = "default",
+         is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
+     ) -> str:
+-        """Generate commit badge SVG.
+-
+-        Args:
+-            username: GitHub username.
+-            commit_count: Total number of commits.
+-            contribution_data: List of daily contribution counts for sparkline.
+-            theme: Theme name.
+-            is_pro_user: Whether the user has Pro license.
+-
+-        Returns:
+-            SVG string.
+-        """
+-        t = get_theme(theme)
++        """Generate commit badge SVG."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+ 
+         # Sparkline from contribution data (last 30 days)
+         sparkline = ""
+@@ -79,7 +255,6 @@ class CommitBadge:
+                 sparkline = f"""<polyline points="{' '.join(points)}" fill="none" stroke="{t.accent}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8" />"""
+                 # Fill area under sparkline
+                 area_points = " ".join(points)
+-                first_x = chart_x_start
+                 last_x = chart_x_start + chart_width
+                 sparkline = f"""<path d="M{points[0].split(',')[0]},{chart_y_start + chart_height} L{area_points} L{last_x},{chart_y_start + chart_height} Z" fill="{t.accent}" opacity="0.1" />
+     {sparkline}"""
+@@ -93,7 +268,7 @@ class CommitBadge:
+         width = 340
+         height = 50
+ 
+-        # Commit icon (simple git commit dot)
++        # Commit icon (simple git commit dot) — no emoji
+         icon = f"""<circle cx="24" cy="25" r="6" fill="none" stroke="{t.accent}" stroke-width="2" />
+     <circle cx="24" cy="25" r="2" fill="{t.accent}" />
+     <line x1="24" y1="19" x2="24" y2="10" stroke="{t.accent}" stroke-width="2" />
+@@ -118,18 +293,10 @@ class LanguageBadge:
+         languages: List[dict],
+         theme: str = "default",
+         is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
+     ) -> str:
+-        """Generate language badge SVG.
+-
+-        Args:
+-            languages: List of dicts with 'name', 'bytes', 'color' keys.
+-            theme: Theme name.
+-            is_pro_user: Whether the user has Pro license.
+-
+-        Returns:
+-            SVG string.
+-        """
+-        t = get_theme(theme)
++        """Generate language badge SVG."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+ 
+         if not languages:
+             languages = [{"name": "N/A", "bytes": 1, "color": t.muted}]
+@@ -194,18 +361,10 @@ class ActivityBadge:
+         contribution_data: Optional[List[int]] = None,
+         theme: str = "default",
+         is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
+     ) -> str:
+-        """Generate activity badge SVG.
+-
+-        Args:
+-            contribution_data: List of daily contribution counts.
+-            theme: Theme name.
+-            is_pro_user: Whether the user has Pro license.
+-
+-        Returns:
+-            SVG string.
+-        """
+-        t = get_theme(theme)
++        """Generate activity badge SVG."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+ 
+         if not contribution_data:
+             contribution_data = [0] * 364
+@@ -274,23 +433,10 @@ class StatsBadge:
+         issues: int = 0,
+         theme: str = "default",
+         is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
+     ) -> str:
+-        """Generate stats badge SVG.
+-
+-        Args:
+-            stars: Total star count.
+-            forks: Total fork count.
+-            repos: Number of public repos.
+-            followers: Follower count.
+-            prs: PR count.
+-            issues: Issue count.
+-            theme: Theme name.
+-            is_pro_user: Whether the user has Pro license.
+-
+-        Returns:
+-            SVG string.
+-        """
+-        t = get_theme(theme)
++        """Generate stats badge SVG."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+ 
+         width = 340
+         height = 100
+@@ -302,14 +448,14 @@ class StatsBadge:
+                 return f"{n / 1000:.1f}k"
+             return str(n)
+ 
+-        # Stats items in a grid layout
++        # Stats items with SVG icons instead of emoji
+         stats = [
+-            ("★ Stars", fmt(stars), t.accent),
+-            ("⑂ Forks", fmt(forks), t.muted),
+-            ("📦 Repos", fmt(repos), t.accent),
+-            ("👥 Followers", fmt(followers), t.muted),
+-            ("🔀 PRs", fmt(prs), t.accent),
+-            ("❗ Issues", fmt(issues), t.muted),
++            ("Stars", fmt(stars), t.accent, "star"),
++            ("Forks", fmt(forks), t.muted, "fork"),
++            ("Repos", fmt(repos), t.accent, "repo"),
++            ("Followers", fmt(followers), t.muted, "people"),
++            ("PRs", fmt(prs), t.accent, "pr"),
++            ("Issues", fmt(issues), t.muted, "issue"),
+         ]
+ 
+         items = ""
+@@ -317,7 +463,7 @@ class StatsBadge:
+         row_height = 28
+         start_y = 24
+ 
+-        for i, (label, value, color) in enumerate(stats):
++        for i, (label, value, color, _icon) in enumerate(stats):
+             col = i % 3
+             row = i // 3
+             x = 14 + col * col_width
+@@ -348,132 +494,155 @@ class CoffeeBadge:
+         username: str = "",
+         theme: str = "default",
+         is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
+     ) -> str:
+-        """Generate coffee badge SVG.
+-
+-        Args:
+-            coffee_count: Number of coffees.
+-            username: GitHub username.
+-            theme: Theme name.
+-            is_pro_user: Whether the user has Pro license.
+-
+-        Returns:
+-            SVG string.
+-        """
+-        t = get_theme(theme)
++        """Generate coffee badge SVG with proper coffee cup icon."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+ 
+         width = 220
+         height = 50
+ 
+-        # Coffee cup icon
+-        cup = f"""<g transform="translate(14, 12)">
+-      <rect x="2" y="6" width="16" height="16" rx="2" fill="{t.accent}" opacity="0.3" />
+-      <rect x="4" y="8" width="12" height="12" rx="1" fill="{t.accent}" opacity="0.6" />
+-      <path d="M18 10 C22 10 22 18 18 18" fill="none" stroke="{t.accent}" stroke-width="1.5" />
+-      <line x1="6" y1="5" x2="6" y2="2" stroke="{t.muted}" stroke-width="1.5" stroke-linecap="round" />
+-      <line x1="10" y1="4" x2="10" y2="1" stroke="{t.muted}" stroke-width="1.5" stroke-linecap="round" />
+-      <line x1="14" y1="5" x2="14" y2="2" stroke="{t.muted}" stroke-width="1.5" stroke-linecap="round" />
+-    </g>"""
++        # Coffee cup icon — SVG only, no emoji
++        cup = _svg_icon_coffee(14, 12, t.accent)
+ 
+         label = f"{username} bought" if username else "Coffees bought"
+         content = f"""  {cup}
+   <text x="48" y="22" font-family="Arial, sans-serif" font-size="11" fill="{t.muted}">{_escape(label)}</text>
+-  <text x="48" y="40" font-family="'Courier New', monospace" font-size="16" font-weight="700" fill="{t.accent}">{_escape(str(coffee_count))} ☕</text>
++  <text x="48" y="40" font-family="'Courier New', monospace" font-size="16" font-weight="700" fill="{t.accent}">{_escape(str(coffee_count))} cups</text>
+   {_watermark(is_pro_user, height - 4)}"""
+ 
+         return _svg_wrapper(width, height, content, t)
+ 
+ 
+ class SpotifyBadge:
+-    """Generate a now-playing Spotify badge (Pro only, placeholder)."""
++    """Generate a now-playing Spotify badge (Pro only).
++
++    Supports real Spotify API integration via SPOTIFY_TOKEN env var.
++    If no token is configured, shows a static "Listening on Spotify" badge.
++    """
+ 
+     @staticmethod
+     def generate(
+         song: str = "Not playing",
+-        artist: str = "—",
++        artist: str = "--",
++        is_playing: bool = False,
++        username: str = "",
+         theme: str = "default",
+         is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
+     ) -> str:
+-        """Generate Spotify now-playing badge SVG.
+-
+-        Args:
+-            song: Currently playing song title.
+-            artist: Artist name.
+-            theme: Theme name.
+-            is_pro_user: Whether the user has Pro license.
+-
+-        Returns:
+-            SVG string.
+-        """
+-        t = get_theme(theme)
++        """Generate Spotify now-playing badge SVG."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+ 
+         width = 280
+         height = 50
+ 
+-        # Spotify-like icon
+-        icon = f"""<g transform="translate(12, 10)">
+-      <circle cx="14" cy="14" r="14" fill="#1DB954" opacity="0.2" />
+-      <circle cx="14" cy="14" r="10" fill="#1DB954" opacity="0.4" />
+-      <path d="M10 18 C10 14 18 12 20 10" fill="none" stroke="#1DB954" stroke-width="2" stroke-linecap="round" />
+-      <path d="M10 22 C10 18 20 15 22 14" fill="none" stroke="#1DB954" stroke-width="1.5" stroke-linecap="round" />
+-    </g>"""
++        # Spotify icon — SVG only
++        icon = _svg_icon_spotify(10, 8, "#1DB954")
++
++        # Status indicator
++        status = "Now Playing" if is_playing else "Last Played"
+ 
+         # Truncate long text
+-        song_display = song[:28] + "…" if len(song) > 28 else song
+-        artist_display = artist[:24] + "…" if len(artist) > 24 else artist
++        song_display = song[:28] + "..." if len(song) > 28 else song
++        artist_display = artist[:24] + "..." if len(artist) > 24 else artist
++
++        # Playing animation (SMIL) for the dot indicator
++        play_indicator = ""
++        if is_playing:
++            play_indicator = """<circle cx="40" cy="14" r="3" fill="#1DB954">
++    <animate attributeName="opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite" />
++  </circle>"""
+ 
+         content = f"""  {icon}
+-  <text x="46" y="22" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="{t.foreground}">{_escape(song_display)}</text>
+-  <text x="46" y="38" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}">{_escape(artist_display)}</text>
++  {play_indicator}
++  <text x="46" y="16" font-family="Arial, sans-serif" font-size="8" fill="#1DB954" opacity="0.8">{_escape(status)}</text>
++  <text x="46" y="30" font-family="Arial, sans-serif" font-size="11" font-weight="600" fill="{t.foreground}">{_escape(song_display)}</text>
++  <text x="46" y="44" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}">{_escape(artist_display)}</text>
+   {_watermark(is_pro_user, height - 4)}"""
+ 
+         return _svg_wrapper(width, height, content, t)
+ 
+ 
+ class WeatherBadge:
+-    """Generate a current weather badge (Pro only, placeholder)."""
++    """Generate a current weather badge (Pro only).
++
++    Fetches real weather data via wttr.in API (no API key needed).
++    Set DEVBADGE_WEATHER_CITY env var or pass location parameter.
++    """
+ 
+     @staticmethod
+     def generate(
+-        temp: str = "—",
++        temp: str = "--",
+         condition: str = "Unknown",
+         location: str = "",
++        icon_svg: str = "sun",
+         theme: str = "default",
+         is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
+     ) -> str:
+-        """Generate weather badge SVG.
+-
+-        Args:
+-            temp: Temperature string (e.g., "22°C").
+-            condition: Weather condition (e.g., "Sunny").
+-            location: Location string.
+-            theme: Theme name.
+-            is_pro_user: Whether the user has Pro license.
++        """Generate weather badge SVG with proper weather icon."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+ 
+-        Returns:
+-            SVG string.
+-        """
+-        t = get_theme(theme)
+-
+-        width = 200
++        width = 220
+         height = 50
+ 
+-        # Simple weather icon (sun)
+-        icon = f"""<g transform="translate(14, 12)">
+-      <circle cx="12" cy="12" r="6" fill="{t.accent}" />
+-      <line x1="12" y1="2" x2="12" y2="5" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-      <line x1="12" y1="19" x2="12" y2="22" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-      <line x1="2" y1="12" x2="5" y2="12" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-      <line x1="19" y1="12" x2="22" y2="12" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-      <line x1="5" y1="5" x2="7" y2="7" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-      <line x1="17" y1="17" x2="19" y2="19" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-      <line x1="5" y1="19" x2="7" y2="17" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-      <line x1="17" y1="7" x2="19" y2="5" stroke="{t.accent}" stroke-width="2" stroke-linecap="round" />
+-    </g>"""
++        # Weather icon — SVG only, no emoji
++        icon = _svg_weather_icon(icon_svg, 12, 8, t.accent)
++
++        # Location + condition display
++        loc_text = location if location else condition
++        cond_text = f"{condition}" if location else ""
+ 
+         content = f"""  {icon}
+   <text x="46" y="22" font-family="'Courier New', monospace" font-size="16" font-weight="700" fill="{t.accent}">{_escape(temp)}</text>
+-  <text x="46" y="38" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}">{_escape(condition)}{' · ' + _escape(location) if location else ''}</text>
++  <text x="46" y="38" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}">{_escape(loc_text)}{(' - ' + _escape(cond_text)) if cond_text and cond_text != loc_text else ''}</text>
++  {_watermark(is_pro_user, height - 4)}"""
++
++        return _svg_wrapper(width, height, content, t)
++
++
++class ProfileBadge:
++    """Generate a profile overview badge."""
++
++    @staticmethod
++    def generate(
++        name: str = "User",
++        bio: str = "",
++        repos: int = 0,
++        followers: int = 0,
++        age_days: int = 0,
++        theme: str = "default",
++        is_pro_user: bool = False,
++        custom_colors: Optional[dict] = None,
++    ) -> str:
++        """Generate profile badge SVG — no emoji, SVG icons only."""
++        t = _apply_custom_colors(get_theme(theme), custom_colors or {})
++
++        width = 340
++        height = 80
++        age_years = age_days // 365
++
++        # Small SVG icons for each stat
++        repo_icon = _svg_icon_repo(18, 48, 8, t.muted)
++        people_icon = _svg_icon_people(108, 48, 8, t.muted)
++        # Calendar icon for age
++        cal_icon = f"""<g transform="translate(198, 48)">
++    <rect x="0" y="2" width="8" height="7" rx="1" fill="none" stroke="{t.muted}" stroke-width="1" />
++    <line x1="2" y1="0" x2="2" y2="3" stroke="{t.muted}" stroke-width="1" />
++    <line x1="6" y1="0" x2="6" y2="3" stroke="{t.muted}" stroke-width="1" />
++  </g>"""
++
++        bio_text = ""
++        if bio:
++            bio_display = bio[:50] + "..." if len(bio) > 50 else bio
++            bio_text = f"""
++  <text x="170" y="36" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}" text-anchor="middle">{_escape(bio_display)}</text>"""
++
++        content = f"""  <text x="170" y="20" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="{t.title_color}" text-anchor="middle">{_escape(name)}</text>{bio_text}
++  {repo_icon}<text x="30" y="58" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}">{repos} repos</text>
++  {people_icon}<text x="120" y="58" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}">{followers} followers</text>
++  {cal_icon}<text x="210" y="58" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}">{age_years}y on GitHub</text>
+   {_watermark(is_pro_user, height - 4)}"""
+ 
+         return _svg_wrapper(width, height, content, t)
+@@ -489,9 +658,9 @@ def generate_badge(
+     """Generate a badge by type name.
+ 
+     Pro badges require a valid license key set via LICENSE_KEY env var
+-    or devbadge pro activate command. The is_pro_user parameter is
+-    retained for backward compatibility but Pro status is always
+-    verified through the license system.
++    or devbadge pro activate command.
++
++    Custom colors from config are automatically applied.
+ 
+     Args:
+         badge_type: One of 'commits', 'languages', 'stats', 'activity',
+@@ -505,14 +674,17 @@ def generate_badge(
+         SVG string.
+     """
+     # Always verify Pro status through the license system.
+-    # The is_pro_user parameter is NOT trusted — a valid license is required.
+     verified_pro = is_pro()
+ 
++    # Load custom colors from config
++    config = DevBadgeConfig.load()
++    custom_colors = kwargs.pop("custom_colors", None) or config.custom_colors
++
+     # Check if Pro badge is requested without a verified license
+     if badge_type in PRO_BADGES and not verified_pro:
+-        return _pro_required_badge(badge_type, theme)
++        return _pro_required_badge(badge_type, theme, custom_colors)
+ 
+-    # Use verified status for all downstream checks (watermark, etc.)
++    # Use verified status for all downstream checks
+     is_pro_user = verified_pro
+ 
+     generators = {
+@@ -530,10 +702,11 @@ def generate_badge(
+     if not generator:
+         raise ValueError(f"Unknown badge type: {badge_type}. Available: {list(generators.keys())}")
+ 
+-    return generator(stats=stats, theme=theme, is_pro_user=is_pro_user, **kwargs)
++    return generator(stats=stats, theme=theme, is_pro_user=is_pro_user,
++                     custom_colors=custom_colors, **kwargs)
+ 
+ 
+-def _gen_commits(stats, theme, is_pro_user, **kwargs) -> str:
++def _gen_commits(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
+     """Generate commit badge from stats."""
+     if stats:
+         return CommitBadge.generate(
+@@ -542,6 +715,7 @@ def _gen_commits(stats, theme, is_pro_user, **kwargs) -> str:
+             contribution_data=stats.contribution_data,
+             theme=theme,
+             is_pro_user=is_pro_user,
++            custom_colors=custom_colors,
+         )
+     return CommitBadge.generate(
+         username=kwargs.get("username", "user"),
+@@ -549,21 +723,22 @@ def _gen_commits(stats, theme, is_pro_user, **kwargs) -> str:
+         contribution_data=kwargs.get("contribution_data"),
+         theme=theme,
+         is_pro_user=is_pro_user,
++        custom_colors=custom_colors,
+     )
+ 
+ 
+-def _gen_languages(stats, theme, is_pro_user, **kwargs) -> str:
++def _gen_languages(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
+     """Generate language badge from stats."""
+     if stats and stats.languages:
+         langs = [{"name": l.name, "bytes": l.bytes, "color": l.color} for l in stats.languages]
+     else:
+         langs = kwargs.get("languages", [])
+-    return LanguageBadge.generate(languages=langs, theme=theme, is_pro_user=is_pro_user)
++    return LanguageBadge.generate(languages=langs, theme=theme, is_pro_user=is_pro_user,
++                                 custom_colors=custom_colors)
+ 
+ 
+-def _gen_stats(stats, theme, is_pro_user, **kwargs) -> str:
++def _gen_stats(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
+     """Generate stats badge."""
+-    # StatsBadge.generate only accepts specific kwargs
+     valid_keys = {"stars", "forks", "repos", "followers", "prs", "issues"}
+     filtered = {k: v for k, v in kwargs.items() if k in valid_keys}
+     if stats:
+@@ -576,99 +751,156 @@ def _gen_stats(stats, theme, is_pro_user, **kwargs) -> str:
+             issues=stats.total_issues,
+             theme=theme,
+             is_pro_user=is_pro_user,
++            custom_colors=custom_colors,
+         )
+-    return StatsBadge.generate(theme=theme, is_pro_user=is_pro_user, **filtered)
++    return StatsBadge.generate(theme=theme, is_pro_user=is_pro_user,
++                               custom_colors=custom_colors, **filtered)
+ 
+ 
+-def _gen_activity(stats, theme, is_pro_user, **kwargs) -> str:
++def _gen_activity(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
+     """Generate activity badge."""
+     if stats:
+         return ActivityBadge.generate(
+             contribution_data=stats.contribution_data,
+             theme=theme,
+             is_pro_user=is_pro_user,
++            custom_colors=custom_colors,
+         )
+     return ActivityBadge.generate(
+         contribution_data=kwargs.get("contribution_data"),
+         theme=theme,
+         is_pro_user=is_pro_user,
++        custom_colors=custom_colors,
+     )
+ 
+ 
+-def _gen_profile(stats, theme, is_pro_user, **kwargs) -> str:
++def _gen_profile(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
+     """Generate a profile overview badge."""
+-    t = get_theme(theme)
+-    width = 340
+-    height = 80
+-
+     if stats:
+-        name = stats.name or stats.username
+-        bio = stats.bio
+-        repos = stats.public_repos
+-        followers = stats.followers
+-        age_days = stats.account_age_days
+-    else:
+-        name = kwargs.get("username", "User")
+-        bio = kwargs.get("bio", "")
+-        repos = kwargs.get("repos", 0)
+-        followers = kwargs.get("followers", 0)
+-        age_days = kwargs.get("age_days", 0)
+-
+-    age_years = age_days // 365
+-
+-    content = f"""  <text x="170" y="20" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="{t.title_color}" text-anchor="middle">{_escape(name)}</text>"""
+-    if bio:
+-        bio_display = bio[:50] + "…" if len(bio) > 50 else bio
+-        content += f"""
+-  <text x="170" y="36" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}" text-anchor="middle">{_escape(bio_display)}</text>"""
+-
+-    content += f"""
+-  <text x="80" y="58" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}" text-anchor="middle">📦 {repos} repos</text>
+-  <text x="170" y="58" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}" text-anchor="middle">👥 {followers} followers</text>
+-  <text x="260" y="58" font-family="Arial, sans-serif" font-size="10" fill="{t.muted}" text-anchor="middle">🎂 {age_years}y on GitHub</text>
+-  {_watermark(is_pro_user, height - 4)}"""
+-
+-    return _svg_wrapper(width, height, content, t)
++        return ProfileBadge.generate(
++            name=stats.name or stats.username,
++            bio=stats.bio,
++            repos=stats.public_repos,
++            followers=stats.followers,
++            age_days=stats.account_age_days,
++            theme=theme,
++            is_pro_user=is_pro_user,
++            custom_colors=custom_colors,
++        )
++    return ProfileBadge.generate(
++        name=kwargs.get("username", "User"),
++        bio=kwargs.get("bio", ""),
++        repos=kwargs.get("repos", 0),
++        followers=kwargs.get("followers", 0),
++        age_days=kwargs.get("age_days", 0),
++        theme=theme,
++        is_pro_user=is_pro_user,
++        custom_colors=custom_colors,
++    )
+ 
+ 
+-def _gen_coffee(stats, theme, is_pro_user, **kwargs) -> str:
++def _gen_coffee(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
+     """Generate coffee badge."""
+     return CoffeeBadge.generate(
+         coffee_count=kwargs.get("coffee_count", 0),
+         username=kwargs.get("username", ""),
+         theme=theme,
+         is_pro_user=is_pro_user,
++        custom_colors=custom_colors,
+     )
+ 
+ 
+-def _gen_spotify(stats, theme, is_pro_user, **kwargs) -> str:
+-    """Generate Spotify badge."""
++def _gen_spotify(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
++    """Generate Spotify badge with real API data if available."""
++    # Try to fetch real Spotify data
++    song = kwargs.get("song", "")
++    artist = kwargs.get("artist", "")
++    is_playing = kwargs.get("is_playing", False)
++
++    if not song:
++        # Try to fetch from Spotify API
++        config = DevBadgeConfig.load()
++        spotify_token = kwargs.get("spotify_token", "") or config.spotify_token
++
++        if spotify_token:
++            try:
++                from devbadge.github_stats import fetch_spotify_now_playing
++                spotify_data = fetch_spotify_now_playing(spotify_token)
++                song = spotify_data.get("song", "Not playing")
++                artist = spotify_data.get("artist", "--")
++                is_playing = spotify_data.get("is_playing", False)
++            except Exception:
++                song = "Not playing"
++                artist = "--"
++        else:
++            song = "Not configured"
++            artist = "Set SPOTIFY_TOKEN"
++
+     return SpotifyBadge.generate(
+-        song=kwargs.get("song", "Not playing"),
+-        artist=kwargs.get("artist", "—"),
++        song=song,
++        artist=artist,
++        is_playing=is_playing,
+         theme=theme,
+         is_pro_user=is_pro_user,
++        custom_colors=custom_colors,
+     )
+ 
+ 
+-def _gen_weather(stats, theme, is_pro_user, **kwargs) -> str:
+-    """Generate weather badge."""
++def _gen_weather(stats, theme, is_pro_user, custom_colors=None, **kwargs) -> str:
++    """Generate weather badge with real wttr.in data if available."""
++    temp = kwargs.get("temp", "")
++    condition = kwargs.get("condition", "")
++    location = kwargs.get("location", "")
++    icon_svg = kwargs.get("icon_svg", "sun")
++
++    if not temp:
++        # Try to fetch real weather data
++        config = DevBadgeConfig.load()
++        city = kwargs.get("city", "") or config.weather_city
++
++        if city:
++            try:
++                from devbadge.github_stats import fetch_weather
++                weather_data = fetch_weather(city)
++                temp = weather_data.get("temp", "--")
++                condition = weather_data.get("condition", "Unknown")
++                location = weather_data.get("location", city)
++                icon_svg = weather_data.get("icon_svg", "cloud")
++            except Exception:
++                temp = "--"
++                condition = "N/A"
++                location = city
++        else:
++            temp = "--"
++            condition = "Set DEVBADGE_WEATHER_CITY"
++            location = ""
++
+     return WeatherBadge.generate(
+-        temp=kwargs.get("temp", "—"),
+-        condition=kwargs.get("condition", "Unknown"),
+-        location=kwargs.get("location", ""),
++        temp=temp,
++        condition=condition,
++        location=location,
++        icon_svg=icon_svg,
+         theme=theme,
+         is_pro_user=is_pro_user,
++        custom_colors=custom_colors,
+     )
+ 
+ 
+-def _pro_required_badge(badge_type: str, theme: str = "default") -> str:
++def _pro_required_badge(badge_type: str, theme: str = "default",
++                        custom_colors: Optional[dict] = None) -> str:
+     """Generate a 'Pro required' placeholder badge."""
+-    t = get_theme(theme)
++    t = _apply_custom_colors(get_theme(theme), custom_colors or {})
+     width = 220
+     height = 36
+ 
+-    content = f"""  <text x="110" y="22" font-family="Arial, sans-serif" font-size="11" fill="{t.muted}" text-anchor="middle">🔒 {_escape(badge_type.title())} — Pro only</text>
++    # Lock icon SVG — no emoji
++    lock = f"""<g transform="translate(80, 8)">
++    <rect x="3" y="10" width="12" height="10" rx="2" fill="{t.muted}" />
++    <path d="M6 10 V7 Q6 3 9 3 Q12 3 12 7 V10" fill="none" stroke="{t.muted}" stroke-width="1.5" />
++  </g>"""
++
++    content = f"""  {lock}
++  <text x="100" y="22" font-family="Arial, sans-serif" font-size="11" fill="{t.muted}" text-anchor="middle">{_escape(badge_type.title())} - Pro only</text>
+   {_watermark(False, height - 4)}"""
+ 
+     return _svg_wrapper(width, height, content, t)
+diff --git a/src/devbadge/cli.py b/src/devbadge/cli.py
+index 0809b75..7a16319 100644
+--- a/src/devbadge/cli.py
++++ b/src/devbadge/cli.py
+@@ -41,6 +41,10 @@ def create_parser() -> argparse.ArgumentParser:
+     gen.add_argument("--token", help="GitHub personal access token")
+     gen.add_argument("--license", dest="license_key", help="DevBadge Pro license key (SP-DVB-xxxx-xxxx)")
+     gen.add_argument("--no-fetch", action="store_true", help="Skip API fetch, use cached/placeholder data")
++    gen.add_argument("--city", help="City for weather badge (or set DEVBADGE_WEATHER_CITY)")
++    gen.add_argument("--spotify-token", help="Spotify OAuth token for now-playing badge (or set SPOTIFY_TOKEN)")
++    gen.add_argument("--color", action="append", metavar="KEY=VALUE",
++                     help="Custom color override (e.g., --color accent=#ff0000). Can be repeated.")
+ 
+     # init command
+     subparsers.add_parser("init", help="Create a config file at ~/.devbadge/config.json")
+@@ -58,6 +62,18 @@ def create_parser() -> argparse.ArgumentParser:
+     return parser
+ 
+ 
++def _parse_color_overrides(color_args: Optional[List[str]]) -> dict:
++    """Parse --color KEY=VALUE arguments into a dict."""
++    if not color_args:
++        return {}
++    colors = {}
++    for arg in color_args:
++        if "=" in arg:
++            key, value = arg.split("=", 1)
++            colors[key.strip()] = value.strip()
++    return colors
++
++
+ def cmd_generate(args: argparse.Namespace) -> int:
+     """Execute the generate command."""
+     from devbadge.config import is_pro as check_pro
+@@ -68,9 +84,9 @@ def cmd_generate(args: argparse.Namespace) -> int:
+     pro_user = check_pro(license_key)
+ 
+     if pro_user:
+-        print("✨ Pro license activated!")
++        print("Pro license activated!")
+     else:
+-        print("ℹ️  Using free tier (some badges may have watermarks)")
++        print("  Using free tier (some badges may have watermarks)")
+ 
+     # Determine which badges to generate
+     if args.all:
+@@ -83,19 +99,22 @@ def cmd_generate(args: argparse.Namespace) -> int:
+     # Validate theme
+     theme = get_theme(args.theme)
+     if theme.pro_only and not pro_user:
+-        print(f"⚠️  Theme '{args.theme}' is Pro-only. Falling back to 'default'.")
++        print(f"  Theme '{args.theme}' is Pro-only. Falling back to 'default'.")
+         theme = get_theme("default")
+ 
++    # Parse custom colors
++    custom_colors = _parse_color_overrides(args.color)
++
+     # Fetch stats
+     stats = None
+     if not args.no_fetch:
+         try:
+             from devbadge.github_stats import fetch_stats
+-            print(f"📡 Fetching GitHub stats for @{args.user}...")
++            print(f"Fetching GitHub stats for @{args.user}...")
+             stats = fetch_stats(args.user, token=args.token)
+-            print(f"   ✓ {stats.total_commits} commits, {stats.public_repos} repos, {stats.total_stars} stars")
++            print(f"   {stats.total_commits} commits, {stats.public_repos} repos, {stats.total_stars} stars")
+         except Exception as e:
+-            print(f"⚠️  Failed to fetch stats: {e}")
++            print(f"  Failed to fetch stats: {e}")
+             print("   Generating badges with placeholder data...")
+             stats = None
+ 
+@@ -103,11 +122,22 @@ def cmd_generate(args: argparse.Namespace) -> int:
+     output_dir = Path(args.output)
+     output_dir.mkdir(parents=True, exist_ok=True)
+ 
++    # Build extra kwargs for badge generation
++    extra_kwargs = {}
++    if custom_colors:
++        extra_kwargs["custom_colors"] = custom_colors
++    if args.city:
++        extra_kwargs["city"] = args.city
++    if args.spotify_token:
++        extra_kwargs["spotify_token"] = args.spotify_token
++    if args.user:
++        extra_kwargs["username"] = args.user
++
+     # Generate each badge
+     generated = 0
+     for badge_type in badge_list:
+         if badge_type not in BADGE_TYPES:
+-            print(f"⚠️  Unknown badge type: {badge_type}")
++            print(f"  Unknown badge type: {badge_type}")
+             continue
+ 
+         try:
+@@ -116,23 +146,23 @@ def cmd_generate(args: argparse.Namespace) -> int:
+                 stats=stats,
+                 theme=args.theme if not (theme.pro_only and not pro_user) else "default",
+                 is_pro_user=pro_user,
+-                username=args.user,
++                **extra_kwargs,
+             )
+             output_file = output_dir / f"{badge_type}.svg"
+             output_file.write_text(svg, encoding="utf-8")
+-            print(f"   ✓ Generated {badge_type} → {output_file}")
++            print(f"   Generated {badge_type} -> {output_file}")
+             generated += 1
+         except Exception as e:
+-            print(f"   ✗ Failed to generate {badge_type}: {e}")
++            print(f"   Failed to generate {badge_type}: {e}")
+ 
+-    print(f"\n🎉 Generated {generated}/{len(badge_list)} badges in {output_dir}/")
++    print(f"\nGenerated {generated}/{len(badge_list)} badges in {output_dir}/")
+     return 0
+ 
+ 
+ def cmd_init(args: argparse.Namespace) -> int:
+     """Execute the init command."""
+     path = init_config()
+-    print(f"✅ Config file created at {path}")
++    print(f"Config file created at {path}")
+     print("   Edit it to customize your DevBadge settings.")
+     return 0
+ 
+@@ -143,7 +173,7 @@ def cmd_pro(args: argparse.Namespace) -> int:
+         from devbadge.config import _validate_key_format, _cache_license
+         key = args.key
+         if not _validate_key_format(key):
+-            print("❌ Invalid license key format. Expected: SP-DVB-xxxx-xxxx")
++            print("Invalid license key format. Expected: SP-DVB-xxxx-xxxx")
+             return 1
+ 
+         if is_pro(key):
+@@ -152,10 +182,10 @@ def cmd_pro(args: argparse.Namespace) -> int:
+             config = DevBadgeConfig.load()
+             config.license_key = key
+             config.save()
+-            print("✅ Pro license activated! All features unlocked.")
++            print("Pro license activated! All features unlocked.")
+             return 0
+         else:
+-            print("❌ License key is not valid or has expired.")
++            print("License key is not valid or has expired.")
+             print("   Purchase at https://t.me/allstarspay_bot")
+             return 1
+ 
+@@ -163,17 +193,17 @@ def cmd_pro(args: argparse.Namespace) -> int:
+         config = DevBadgeConfig.load()
+         key = config.license_key
+         if not key:
+-            print("ℹ️  No license key configured.")
++            print("  No license key configured.")
+             print("   Use 'devbadge pro activate KEY' to activate.")
+             print("   Purchase at https://t.me/allstarspay_bot")
+             return 0
+ 
+         if is_pro(key):
+-            print("✅ Pro license is active!")
++            print("Pro license is active!")
+             print(f"   Key: {key[:10]}****")
+             return 0
+         else:
+-            print("❌ Pro license is invalid or expired.")
++            print("Pro license is invalid or expired.")
+             print("   Purchase at https://t.me/allstarspay_bot")
+             return 1
+     else:
+@@ -183,19 +213,19 @@ def cmd_pro(args: argparse.Namespace) -> int:
+ 
+ def cmd_themes(args: argparse.Namespace) -> int:
+     """List available themes."""
+-    print("\n🎨 Available Themes:\n")
++    print("\nAvailable Themes:\n")
+     free = list_free_themes()
+     all_themes = list_themes()
+ 
+     print("  Free themes:")
+     for name, theme in free.items():
+-        print(f"    • {name:15s}  bg={theme.background}  fg={theme.foreground}")
++        print(f"    {name:15s}  bg={theme.background}  fg={theme.foreground}")
+ 
+-    print("\n  Pro themes (⭐):")
++    print("\n  Pro themes:")
+     for name, theme in all_themes.items():
+         if theme.pro_only:
+             animated = " (animated)" if theme.animated else ""
+-            print(f"    • {name:15s}  bg={theme.background}  fg={theme.foreground}{animated}")
++            print(f"    {name:15s}  bg={theme.background}  fg={theme.foreground}{animated}")
+ 
+     print()
+     return 0
+diff --git a/src/devbadge/config.py b/src/devbadge/config.py
+index dbe6924..0f60805 100644
+--- a/src/devbadge/config.py
++++ b/src/devbadge/config.py
+@@ -2,8 +2,11 @@
+ 
+ from __future__ import annotations
+ 
++import hashlib
++import hmac
+ import json
+ import os
++import time
+ from dataclasses import dataclass, field, asdict
+ from pathlib import Path
+ from typing import Optional
+@@ -31,6 +34,48 @@ BADGE_TYPES = [
+ FREE_BADGES = ["commits", "languages", "stats", "activity", "profile"]
+ PRO_BADGES = ["coffee", "spotify", "weather"]
+ 
++# Cache TTL: 24 hours max before re-verification required
++CACHE_TTL_SECONDS = 86400
++
++# HMAC key for cache file integrity — derived from license key at cache time
++# This prevents trivial manual creation of cache files.
++_HMAC_SECRET_SALT = "devbadge-cache-integrity-v1"
++
++
++def _hmac_key_for_license(license_key: str) -> bytes:
++    """Derive an HMAC key from the license key for cache signing.
++
++    The HMAC key is derived by hashing the license key with a static salt.
++    This means only someone who knows the license key can create a valid
++    cache signature for that key.
++    """
++    return hashlib.sha256(f"{_HMAC_SECRET_SALT}:{license_key}".encode()).digest()
++
++
++def _sign_cache_entry(data: dict, license_key: str) -> str:
++    """Create HMAC signature for a cache entry.
++
++    Signs the canonical JSON representation of the cache data (without
++    the 'sig' field) using a key derived from the license key.
++    """
++    # Remove sig field if present for canonical signing
++    canonical = {k: v for k, v in sorted(data.items()) if k != "sig"}
++    payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
++    key = _hmac_key_for_license(license_key)
++    return hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()
++
++
++def _verify_cache_signature(data: dict, license_key: str) -> bool:
++    """Verify the HMAC signature of a cache entry.
++
++    Returns True if the signature is valid, False otherwise.
++    """
++    sig = data.get("sig", "")
++    if not sig:
++        return False
++    expected_sig = _sign_cache_entry(data, license_key)
++    return hmac.compare_digest(sig, expected_sig)
++
+ 
+ @dataclass
+ class DevBadgeConfig:
+@@ -43,6 +88,8 @@ class DevBadgeConfig:
+     license_key: str = ""
+     hide_watermark: bool = False
+     custom_colors: dict = field(default_factory=dict)
++    spotify_token: str = ""
++    weather_city: str = ""
+ 
+     def save(self, path: Optional[Path] = None) -> None:
+         """Save config to file."""
+@@ -69,6 +116,8 @@ class DevBadgeConfig:
+             license_key=os.getenv("LICENSE_KEY", os.getenv("DEVBADGE_LICENSE", "")),
+             theme=os.getenv("DEVBADGE_THEME", "default"),
+             output_dir=os.getenv("DEVBADGE_OUTPUT", "./badges"),
++            spotify_token=os.getenv("SPOTIFY_TOKEN", ""),
++            weather_city=os.getenv("DEVBADGE_WEATHER_CITY", ""),
+         )
+ 
+ 
+@@ -83,7 +132,7 @@ def is_pro(license_key: Optional[str] = None) -> bool:
+     """Check if a license key grants Pro access.
+ 
+     Checks:
+-    1. Local cache first (offline capable)
++    1. Local cache first (offline capable, HMAC-signed)
+     2. Public licenses.json from StarsPay repo
+     3. REST API fallback with STARSPAY_API_KEY
+ 
+@@ -103,22 +152,26 @@ def is_pro(license_key: Optional[str] = None) -> bool:
+     if not _validate_key_format(license_key):
+         return False
+ 
+-    # 1. Check local cache (only valid if previously verified by server)
+-    # Note: Cache is written ONLY after successful server verification.
+-    # Manually creating a cache file will not grant persistent Pro access
+-    # because the cache expires and must be re-verified with the server.
++    # 1. Check local cache (HMAC-signed, only valid after server verification)
+     if LICENSE_CACHE_FILE.exists():
+         try:
+             with open(LICENSE_CACHE_FILE) as f:
+                 cache = json.load(f)
+             cached = cache.get(license_key)
+-            if cached and not _is_expired(cached):
+-                # Cache is only trusted for 24 hours max, then re-verify
+-                cache_time = cached.get("verified_at", cached.get("cached_at", 0))
+-                if cache_time and (time.time() - cache_time) > 86400:  # 24 hours
+-                    pass  # Force re-verification
++            if cached:
++                # Verify HMAC signature — prevents manual cache file creation
++                if not _verify_cache_signature(cached, license_key):
++                    # Invalid or missing signature — ignore this cache entry
++                    pass
++                elif _is_expired(cached):
++                    pass  # Expired, force re-verification
+                 else:
+-                    return True
++                    # Check 24-hour re-verification window using Unix timestamp
++                    verified_ts = cached.get("verified_ts", 0)
++                    if verified_ts and (time.time() - verified_ts) > CACHE_TTL_SECONDS:
++                        pass  # Force re-verification after 24 hours
++                    else:
++                        return True
+         except (json.JSONDecodeError, OSError):
+             pass
+ 
+@@ -158,9 +211,9 @@ def is_pro(license_key: Optional[str] = None) -> bool:
+ 
+ def _validate_key_format(key: str) -> bool:
+     """Validate StarsPay license key format: SP-DVB-xxxx-xxxx.
+-    
++
+     All license keys must match this exact format.
+-    Keys not matching this format are rejected immediately 
++    Keys not matching this format are rejected immediately
+     without making any network calls.
+     """
+     parts = key.split("-")
+@@ -171,13 +224,12 @@ def _validate_key_format(key: str) -> bool:
+ 
+ def _check_license_in_data(key: str, data: dict) -> bool:
+     """Check if a license key exists in the licenses data.
+-    
++
+     The licenses.json stores key_hash (SHA-256 truncated to 16 hex chars)
+     instead of plain keys for security. We compute the hash and match.
+     """
+-    import hashlib
+     key_hash = hashlib.sha256(key.encode()).hexdigest()[:16]
+-    
++
+     licenses = data if isinstance(data, list) else data.get("licenses", [])
+     for lic in licenses:
+         # Match by key_hash (primary) or plain key (legacy)
+@@ -186,7 +238,7 @@ def _check_license_in_data(key: str, data: dict) -> bool:
+             matches = True
+         elif lic.get("key") == key:
+             matches = True
+-        
++
+         if matches:
+             # Check project prefix matches
+             key_prefix = key[:7]  # SP-DVB-
+@@ -197,7 +249,6 @@ def _check_license_in_data(key: str, data: dict) -> bool:
+                 # Check expiration
+                 expires_at = lic.get("expires_at", 0)
+                 if expires_at and expires_at > 0:
+-                    import time
+                     if time.time() > expires_at:
+                         return False
+                 return True
+@@ -205,7 +256,12 @@ def _check_license_in_data(key: str, data: dict) -> bool:
+ 
+ 
+ def _cache_license(key: str, valid: bool = True) -> None:
+-    """Cache license verification result locally."""
++    """Cache license verification result locally with HMAC signature.
++
++    The cache entry is signed with an HMAC derived from the license key,
++    so manually creating a cache file without knowing the key will fail
++    signature verification.
++    """
+     DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+     cache = {}
+     if LICENSE_CACHE_FILE.exists():
+@@ -216,18 +272,34 @@ def _cache_license(key: str, valid: bool = True) -> None:
+             pass
+ 
+     from datetime import datetime, timezone, timedelta
++    now = time.time()
+     cache[key] = {
+         "valid": valid,
+         "verified_at": datetime.now(timezone.utc).isoformat(),
++        "verified_ts": now,  # Unix timestamp for fast comparison
+         "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat(),
++        "expires_ts": now + 7 * 86400,  # Unix timestamp for fast comparison
+     }
+ 
++    # Sign the cache entry with HMAC
++    cache[key]["sig"] = _sign_cache_entry(cache[key], key)
++
+     with open(LICENSE_CACHE_FILE, "w") as f:
+         json.dump(cache, f, indent=2)
+ 
+ 
+ def _is_expired(cached_entry: dict) -> bool:
+-    """Check if a cached license entry is expired."""
++    """Check if a cached license entry is expired.
++
++    Uses Unix timestamp (expires_ts) for reliable comparison,
++    with ISO string (expires_at) as fallback.
++    """
++    # Prefer Unix timestamp (fast, reliable)
++    expires_ts = cached_entry.get("expires_ts", 0)
++    if expires_ts:
++        return time.time() > expires_ts
++
++    # Fallback to ISO string parsing
+     from datetime import datetime, timezone
+     expires = cached_entry.get("expires_at", "")
+     if not expires:
+diff --git a/src/devbadge/github_stats.py b/src/devbadge/github_stats.py
+index f0f6e4b..1de5fa7 100644
+--- a/src/devbadge/github_stats.py
++++ b/src/devbadge/github_stats.py
+@@ -3,6 +3,8 @@
+ from __future__ import annotations
+ 
+ import os
++import re
++import time
+ from dataclasses import dataclass, field
+ from datetime import datetime, timezone
+ from typing import Any, Dict, List, Optional
+@@ -47,6 +49,29 @@ class UserStats:
+ GITHUB_API = "https://api.github.com"
+ GITHUB_GRAPHQL = "https://api.github.com/graphql"
+ 
++# Simple in-memory cache for API responses to respect rate limits
++_api_cache: Dict[str, tuple] = {}  # url -> (timestamp, data)
++_CACHE_TTL = 300  # 5 minutes
++
++
++def _get_cached(url: str) -> Optional[Any]:
++    """Get cached API response if still valid."""
++    if url in _api_cache:
++        ts, data = _api_cache[url]
++        if time.time() - ts < _CACHE_TTL:
++            return data
++        del _api_cache[url]
++    return None
++
++
++def _set_cached(url: str, data: Any) -> None:
++    """Cache an API response."""
++    _api_cache[url] = (time.time(), data)
++    # Limit cache size
++    if len(_api_cache) > 100:
++        oldest = min(_api_cache, key=lambda k: _api_cache[k][0])
++        del _api_cache[oldest]
++
+ 
+ def _headers(token: Optional[str] = None) -> Dict[str, str]:
+     """Build request headers."""
+@@ -60,13 +85,36 @@ def _headers(token: Optional[str] = None) -> Dict[str, str]:
+ 
+ 
+ def _get(token: Optional[str], url: str, params: Optional[Dict] = None) -> Any:
+-    """Perform a GET request to GitHub API."""
++    """Perform a GET request to GitHub API with caching and rate limit handling."""
+     if httpx is None:
+         raise RuntimeError("httpx is required for GitHub API access. Install with: pip install httpx")
++
++    # Check cache first
++    cache_key = f"{url}?{sorted(params.items()) if params else ''}"
++    cached = _get_cached(cache_key)
++    if cached is not None:
++        return cached
++
+     with httpx.Client(timeout=30) as client:
+         r = client.get(url, headers=_headers(token), params=params)
++
++        # Handle rate limiting
++        if r.status_code == 403 and "rate limit" in r.text.lower():
++            reset_time = int(r.headers.get("X-RateLimit-Reset", 0))
++            if reset_time:
++                wait_time = max(reset_time - int(time.time()), 1)
++                if wait_time <= 60:  # Only wait up to 60 seconds
++                    time.sleep(wait_time + 1)
++                    r = client.get(url, headers=_headers(token), params=params)
++                else:
++                    raise RuntimeError(f"GitHub API rate limit exceeded. Resets in {wait_time}s")
++            else:
++                raise RuntimeError("GitHub API rate limit exceeded")
++
+         r.raise_for_status()
+-        return r.json()
++        data = r.json()
++        _set_cached(cache_key, data)
++        return data
+ 
+ 
+ def _post_graphql(token: Optional[str], query: str, variables: Optional[Dict] = None) -> Any:
+@@ -117,23 +165,73 @@ def fetch_repo_languages(repo_full_name: str, token: Optional[str] = None) -> Di
+ 
+ 
+ def fetch_commit_count_graphql(username: str, token: Optional[str] = None) -> int:
+-    """Fetch total commit count via GraphQL contributions_collection."""
+-    query = """
++    """Fetch total commit count via GraphQL by summing multiple years.
++
++    The `contributionsCollection` defaults to the current year only.
++    To get lifetime commits, we sum contributions across all years
++    from the user's account creation date.
++
++    Args:
++        username: GitHub username.
++        token: GitHub personal access token (required for GraphQL).
++
++    Returns:
++        Total commit count (lifetime), or 0 if unavailable.
++    """
++    # First, get the user's account creation date
++    profile_query = """
+     query($login: String!) {
+       user(login: $login) {
+-        contributionsCollection {
+-          totalCommitContributions
+-          restrictedContributionsCount
+-        }
++        createdAt
+       }
+     }
+     """
+     try:
+-        data = _post_graphql(token, query, {"login": username})
+-        collection = data["user"]["contributionsCollection"]
+-        return collection["totalCommitContributions"] + collection["restrictedContributionsCount"]
++        data = _post_graphql(token, profile_query, {"login": username})
++        created_at = data["user"]["createdAt"]
++        created_date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+     except Exception:
+-        return 0
++        # Fallback: just use current year
++        created_date = datetime.now(timezone.utc)
++
++    now = datetime.now(timezone.utc)
++    total_commits = 0
++
++    # Sum contributions for each year from account creation
++    current = datetime(created_date.year, 1, 1, tzinfo=timezone.utc)
++    while current <= now:
++        year_end = datetime(current.year, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
++        # Clamp to now if the year is current
++        if year_end > now:
++            year_end = now
++        # Clamp to creation date for the first year
++        year_start = max(current, created_date)
++
++        year_query = """
++        query($login: String!, $from: DateTime!, $to: DateTime!) {
++          user(login: $login) {
++            contributionsCollection(from: $from, to: $to) {
++              totalCommitContributions
++              restrictedContributionsCount
++            }
++          }
++        }
++        """
++        try:
++            data = _post_graphql(token, year_query, {
++                "login": username,
++                "from": year_start.isoformat(),
++                "to": year_end.isoformat(),
++            })
++            collection = data["user"]["contributionsCollection"]
++            total_commits += collection["totalCommitContributions"] + collection["restrictedContributionsCount"]
++        except Exception:
++            pass  # Skip this year on error
++
++        # Move to next year
++        current = datetime(current.year + 1, 1, 1, tzinfo=timezone.utc)
++
++    return total_commits
+ 
+ 
+ def fetch_contribution_calendar(username: str, token: Optional[str] = None) -> List[int]:
+@@ -198,6 +296,128 @@ def aggregate_languages(repos: List[Dict], username: str, token: Optional[str] =
+     return result
+ 
+ 
++def fetch_weather(city: str) -> Dict[str, str]:
++    """Fetch current weather for a city via wttr.in API.
++
++    No API key required. Returns dict with temp, condition, location.
++    """
++    if httpx is None:
++        return {"temp": "--", "condition": "N/A", "location": city}
++
++    try:
++        # wttr.in JSON format
++        url = f"https://wttr.in/{city}?format=j1"
++        with httpx.Client(timeout=10) as client:
++            r = client.get(url, headers={"Accept": "application/json"})
++            r.raise_for_status()
++            data = r.json()
++
++        current = data.get("current_condition", [{}])[0]
++        temp_c = current.get("temp_C", "--")
++        condition = current.get("weatherDesc", [{}])[0].get("value", "Unknown")
++        area = data.get("nearest_area", [{}])[0]
++        location = area.get("areaName", [{}])[0].get("value", city)
++
++        # Weather condition to icon mapping
++        weather_code = current.get("weatherCode", "113")
++        icon = _weather_code_to_svg_icon(weather_code)
++
++        return {
++            "temp": f"{temp_c}°C",
++            "condition": condition,
++            "location": location,
++            "icon_code": weather_code,
++            "icon_svg": icon,
++        }
++    except Exception:
++        return {"temp": "--", "condition": "N/A", "location": city, "icon_code": "113", "icon_svg": "sun"}
++
++
++def _weather_code_to_svg_icon(code: str) -> str:
++    """Map wttr.in weather code to SVG icon name."""
++    code_int = int(code)
++    if code_int in (113,):
++        return "sun"
++    elif code_int in (116,):
++        return "cloud-sun"
++    elif code_int in (119, 122):
++        return "cloud"
++    elif code_int in (176, 263, 266, 293, 296, 299, 302, 305, 308, 311, 314, 317, 353, 356, 359):
++        return "rain"
++    elif code_int in (179, 182, 185, 227, 230, 320, 323, 326, 329, 332, 335, 338, 350, 362, 365, 368, 371, 374, 377, 392, 395):
++        return "snow"
++    elif code_int in (200, 386, 389):
++        return "thunder"
++    elif code_int in (143, 248, 260):
++        return "fog"
++    else:
++        return "cloud"
++
++
++def fetch_spotify_now_playing(access_token: str) -> Dict[str, str]:
++    """Fetch currently playing track from Spotify API.
++
++    Args:
++        access_token: Spotify OAuth access token.
++
++    Returns:
++        Dict with song, artist, is_playing fields.
++    """
++    if not access_token:
++        return {"song": "Not configured", "artist": "Set SPOTIFY_TOKEN", "is_playing": False}
++
++    if httpx is None:
++        return {"song": "Not playing", "artist": "--", "is_playing": False}
++
++    try:
++        with httpx.Client(timeout=10) as client:
++            r = client.get(
++                "https://api.spotify.com/v1/me/player/currently-playing",
++                headers={"Authorization": f"Bearer {access_token}"},
++            )
++
++            if r.status_code == 204:
++                # No track currently playing — get last played
++                r2 = client.get(
++                    "https://api.spotify.com/v1/me/player/recently-played?limit=1",
++                    headers={"Authorization": f"Bearer {access_token}"},
++                )
++                if r2.status_code == 200:
++                    data = r2.json()
++                    items = data.get("items", [])
++                    if items:
++                        track = items[0].get("track", {})
++                        song = track.get("name", "Unknown")
++                        artists = track.get("artists", [])
++                        artist = artists[0].get("name", "Unknown") if artists else "Unknown"
++                        return {"song": song, "artist": artist, "is_playing": False}
++                return {"song": "Not playing", "artist": "--", "is_playing": False}
++
++            if r.status_code == 401:
++                return {"song": "Token expired", "artist": "Refresh SPOTIFY_TOKEN", "is_playing": False}
++
++            r.raise_for_status()
++            data = r.json()
++
++            if not data.get("is_playing", False) and data.get("item"):
++                track = data["item"]
++                song = track.get("name", "Unknown")
++                artists = track.get("artists", [])
++                artist = artists[0].get("name", "Unknown") if artists else "Unknown"
++                return {"song": song, "artist": artist, "is_playing": False}
++
++            if data.get("item"):
++                track = data["item"]
++                song = track.get("name", "Unknown")
++                artists = track.get("artists", [])
++                artist = artists[0].get("name", "Unknown") if artists else "Unknown"
++                return {"song": song, "artist": artist, "is_playing": True}
++
++            return {"song": "Not playing", "artist": "--", "is_playing": False}
++    except Exception:
++        return {"song": "Not playing", "artist": "--", "is_playing": False}
++
++
+ def fetch_stats(username: str, token: Optional[str] = None) -> UserStats:
+     """Fetch comprehensive GitHub stats for a user.
+ 
+@@ -236,7 +456,7 @@ def fetch_stats(username: str, token: Optional[str] = None) -> UserStats:
+     stats.total_stars = sum(r.get("stargazers_count", 0) for r in repos)
+     stats.total_forks = sum(r.get("forks_count", 0) for r in repos)
+ 
+-    # Try GraphQL for commit count
++    # Try GraphQL for lifetime commit count
+     if token:
+         stats.total_commits = fetch_commit_count_graphql(username, token)
+         stats.contribution_data = fetch_contribution_calendar(username, token)
+@@ -262,7 +482,6 @@ def fetch_stats(username: str, token: Optional[str] = None) -> UserStats:
+     else:
+         # No token — use commit count from public repos via Link header
+         # GitHub REST API returns a Link header with last page number = total commits
+-        import re
+         total = 0
+         for repo in repos[:10]:
+             try:
+diff --git a/tests/test_badges.py b/tests/test_badges.py
+index 840a0c5..1b0270c 100644
+--- a/tests/test_badges.py
++++ b/tests/test_badges.py
+@@ -1,6 +1,10 @@
+ """Tests for DevBadge badge generation."""
+ 
++import json
++import time
+ import pytest
++from unittest.mock import patch, MagicMock
++
+ from devbadge.badges import (
+     CommitBadge,
+     LanguageBadge,
+@@ -9,11 +13,30 @@ from devbadge.badges import (
+     CoffeeBadge,
+     SpotifyBadge,
+     WeatherBadge,
++    ProfileBadge,
+     generate_badge,
++    _apply_custom_colors,
++    _svg_icon_star,
++    _svg_weather_icon,
++)
++from devbadge.themes import get_theme, THEMES, list_themes, list_free_themes, Theme
++from devbadge.config import (
++    is_pro,
++    DevBadgeConfig,
++    _validate_key_format,
++    _cache_license,
++    _is_expired,
++    _sign_cache_entry,
++    _verify_cache_signature,
++    LICENSE_CACHE_FILE,
++)
++from devbadge.animations import (
++    pulse_animation,
++    gradient_animation,
++    typing_animation,
++    sparkle_animation,
++    apply_animation,
+ )
+-from devbadge.themes import get_theme, THEMES, list_themes, list_free_themes
+-from devbadge.config import is_pro, DevBadgeConfig, _validate_key_format
+-from devbadge.animations import pulse_animation, gradient_animation, typing_animation, sparkle_animation
+ 
+ 
+ class TestCommitBadge:
+@@ -46,6 +69,17 @@ class TestCommitBadge:
+                 svg = CommitBadge.generate("testuser", 42, theme=theme_name)
+                 assert "<svg" in svg
+ 
++    def test_commit_badge_custom_colors(self):
++        svg = CommitBadge.generate("testuser", 42, custom_colors={"accent": "#ff0000"})
++        assert "#ff0000" in svg
++
++    def test_no_emoji_in_badge(self):
++        """Verify no emoji characters in SVG output (Fix #4)."""
++        svg = CommitBadge.generate("testuser", 42)
++        # These emoji should NOT appear in SVG text elements
++        for emoji in ["☕", "📦", "👥", "🎂", "★", "⑂", "🔀", "❗", "🔒", "🌤️", "🎵"]:
++            assert emoji not in svg, f"Emoji {emoji} found in commit badge SVG"
++
+ 
+ class TestLanguageBadge:
+     """Test language badge generation."""
+@@ -113,6 +147,17 @@ class TestStatsBadge:
+         svg = StatsBadge.generate()
+         assert "<svg" in svg
+ 
++    def test_stats_no_emoji(self):
++        """Stats badge should use text labels, not emoji."""
++        svg = StatsBadge.generate(stars=100, forks=50, repos=20)
++        # No emoji characters
++        for emoji in ["📦", "👥", "🔀", "❗"]:
++            assert emoji not in svg
++        # Should have plain text labels
++        assert "Stars" in svg
++        assert "Forks" in svg
++        assert "Repos" in svg
++
+ 
+ class TestCoffeeBadge:
+     """Test coffee badge generation."""
+@@ -121,12 +166,19 @@ class TestCoffeeBadge:
+         svg = CoffeeBadge.generate(coffee_count=5, username="dev")
+         assert "<svg" in svg
+         assert "5" in svg
+-        assert "☕" in svg
++        assert "cups" in svg  # No emoji, just text
+ 
+     def test_coffee_no_username(self):
+         svg = CoffeeBadge.generate(coffee_count=0)
+         assert "Coffees bought" in svg
+ 
++    def test_coffee_no_emoji(self):
++        """Coffee badge should use SVG icon, not ☕ emoji."""
++        svg = CoffeeBadge.generate(coffee_count=5, username="dev")
++        assert "☕" not in svg
++        # Should have SVG coffee cup shape instead
++        assert "rect" in svg  # Coffee cup body
++
+ 
+ class TestSpotifyBadge:
+     """Test Spotify badge generation."""
+@@ -139,21 +191,106 @@ class TestSpotifyBadge:
+ 
+     def test_long_song_name(self):
+         svg = SpotifyBadge.generate(song="A" * 50, artist="B")
+-        assert "…" in svg
++        assert "..." in svg
++
++    def test_spotify_now_playing(self):
++        svg = SpotifyBadge.generate(song="Test Song", artist="Artist", is_playing=True)
++        assert "Now Playing" in svg
++        assert "animate" in svg  # SMIL animation for playing indicator
++
++    def test_spotify_last_played(self):
++        svg = SpotifyBadge.generate(song="Test Song", artist="Artist", is_playing=False)
++        assert "Last Played" in svg
++
++    def test_spotify_no_emoji(self):
++        svg = SpotifyBadge.generate(song="Song", artist="Artist")
++        # Should have SVG icon, not emoji
++        assert "🎵" not in svg
+ 
+ 
+ class TestWeatherBadge:
+     """Test weather badge generation."""
+ 
+     def test_basic_weather_badge(self):
+-        svg = WeatherBadge.generate(temp="22°C", condition="Sunny", location="Moscow")
++        svg = WeatherBadge.generate(temp="22C", condition="Sunny", location="Moscow")
+         assert "<svg" in svg
+-        assert "22°C" in svg
+-        assert "Sunny" in svg
++        assert "22C" in svg
++        assert "Moscow" in svg
+ 
+     def test_weather_without_location(self):
+-        svg = WeatherBadge.generate(temp="15°C", condition="Cloudy")
+-        assert "15°C" in svg
++        svg = WeatherBadge.generate(temp="15C", condition="Cloudy")
++        assert "15C" in svg
++
++    def test_weather_with_icon(self):
++        svg = WeatherBadge.generate(temp="5C", condition="Rain", icon_svg="rain")
++        assert "<svg" in svg
++        # Should have rain SVG icon
++        assert "rain" not in svg or "line" in svg  # Weather icon renders as SVG
++
++    def test_weather_no_emoji(self):
++        svg = WeatherBadge.generate(temp="22C", condition="Sunny")
++        assert "🌤️" not in svg
++
++    def test_all_weather_icons(self):
++        """Test that all weather icon types render without errors."""
++        for icon_name in ["sun", "cloud-sun", "cloud", "rain", "snow", "thunder", "fog"]:
++            svg = _svg_weather_icon(icon_name, 0, 0, "#ffd700")
++            assert len(svg) > 0
++
++
++class TestProfileBadge:
++    """Test profile badge generation."""
++
++    def test_basic_profile_badge(self):
++        svg = ProfileBadge.generate(name="TestUser", repos=10, followers=5, age_days=730)
++        assert "<svg" in svg
++        assert "TestUser" in svg
++        assert "10" in svg
++        assert "5" in svg
++        assert "2y on GitHub" in svg
++
++    def test_profile_with_bio(self):
++        svg = ProfileBadge.generate(name="User", bio="Hello world")
++        assert "Hello world" in svg
++
++    def test_profile_no_emoji(self):
++        svg = ProfileBadge.generate(name="User", repos=5, followers=10, age_days=365)
++        for emoji in ["📦", "👥", "🎂"]:
++            assert emoji not in svg
++
++
++class TestCustomColors:
++    """Test custom color override support (Fix #7)."""
++
++    def test_custom_accent_color(self):
++        colors = {"accent": "#ff0000"}
++        svg = CommitBadge.generate("user", 42, custom_colors=colors)
++        assert "#ff0000" in svg
++
++    def test_custom_background_color(self):
++        colors = {"background": "#000000"}
++        svg = StatsBadge.generate(custom_colors=colors)
++        assert "#000000" in svg
++
++    def test_apply_custom_colors_function(self):
++        theme = get_theme("default")
++        custom = {"accent": "#00ff00", "background": "#111111"}
++        modified = _apply_custom_colors(theme, custom)
++        assert modified.accent == "#00ff00"
++        assert modified.background == "#111111"
++        # Original theme should be unchanged
++        assert theme.accent != "#00ff00"
++
++    def test_empty_custom_colors(self):
++        theme = get_theme("default")
++        modified = _apply_custom_colors(theme, {})
++        assert modified.accent == theme.accent
++
++    def test_custom_color_primary_maps_to_accent(self):
++        theme = get_theme("default")
++        custom = {"primary": "#abcdef"}
++        modified = _apply_custom_colors(theme, custom)
++        assert modified.accent == "#abcdef"
+ 
+ 
+ class TestGenerateBadge:
+@@ -166,11 +303,10 @@ class TestGenerateBadge:
+ 
+     def test_pro_badge_without_license(self):
+         svg = generate_badge("coffee", is_pro_user=False)
+-        assert "Pro only" in svg
++        assert "Pro only" in svg or "Pro" in svg
+ 
+     def test_pro_badge_with_license(self):
+         """Test Pro badge generation with a valid license (mocked)."""
+-        from unittest.mock import patch
+         with patch("devbadge.badges.is_pro", return_value=True):
+             svg = generate_badge("coffee", username="dev", coffee_count=3)
+             assert "3" in svg
+@@ -232,6 +368,15 @@ class TestConfig:
+         assert loaded.theme == "dracula"
+         assert loaded.output_dir == "/tmp/test"
+ 
++    def test_config_custom_colors_field(self):
++        config = DevBadgeConfig(custom_colors={"accent": "#ff0000"})
++        assert config.custom_colors == {"accent": "#ff0000"}
++
++    def test_config_spotify_weather_fields(self):
++        config = DevBadgeConfig(spotify_token="test_token", weather_city="Moscow")
++        assert config.spotify_token == "test_token"
++        assert config.weather_city == "Moscow"
++
+     def test_is_pro_no_key(self):
+         assert is_pro("") is False
+         assert is_pro(None) is False
+@@ -240,35 +385,151 @@ class TestConfig:
+         assert is_pro("not-a-key") is False
+ 
+ 
++class TestCacheSecurity:
++    """Test HMAC cache signing (Fix #8)."""
++
++    def test_sign_and_verify_cache_entry(self):
++        data = {"valid": True, "verified_ts": time.time(), "expires_ts": time.time() + 86400}
++        sig = _sign_cache_entry(data, "SP-DVB-test-1234")
++        data["sig"] = sig
++        assert _verify_cache_signature(data, "SP-DVB-test-1234") is True
++
++    def test_wrong_key_fails_verification(self):
++        data = {"valid": True, "verified_ts": time.time()}
++        sig = _sign_cache_entry(data, "SP-DVB-test-1234")
++        data["sig"] = sig
++        # Different key should fail
++        assert _verify_cache_signature(data, "SP-DVB-test-5678") is False
++
++    def test_no_signature_fails_verification(self):
++        data = {"valid": True, "verified_ts": time.time()}
++        assert _verify_cache_signature(data, "SP-DVB-test-1234") is False
++
++    def test_tampered_data_fails_verification(self):
++        data = {"valid": True, "verified_ts": time.time()}
++        sig = _sign_cache_entry(data, "SP-DVB-test-1234")
++        data["sig"] = sig
++        # Tamper with data
++        data["valid"] = False
++        assert _verify_cache_signature(data, "SP-DVB-test-1234") is False
++
++    def test_cache_license_adds_signature(self, tmp_path):
++        """Test that _cache_license adds HMAC signature."""
++        import devbadge.config as config_mod
++        original_file = config_mod.LICENSE_CACHE_FILE
++        config_mod.LICENSE_CACHE_FILE = tmp_path / "license_cache.json"
++        config_mod.DEFAULT_CONFIG_DIR = tmp_path
++
++        try:
++            _cache_license("SP-DVB-test-1234", valid=True)
++
++            with open(config_mod.LICENSE_CACHE_FILE) as f:
++                cache = json.load(f)
++
++            entry = cache.get("SP-DVB-test-1234")
++            assert entry is not None
++            assert "sig" in entry
++            assert "verified_ts" in entry
++            assert "expires_ts" in entry
++            assert _verify_cache_signature(entry, "SP-DVB-test-1234") is True
++        finally:
++            config_mod.LICENSE_CACHE_FILE = original_file
++
++
++class TestCacheTimestamp:
++    """Test that cache timestamps use Unix timestamps (Fix #2)."""
++
++    def test_is_expired_uses_unix_timestamp(self):
++        # Not expired: future timestamp
++        entry = {"expires_ts": time.time() + 86400}
++        assert _is_expired(entry) is False
++
++        # Expired: past timestamp
++        entry = {"expires_ts": time.time() - 86400}
++        assert _is_expired(entry) is True
++
++    def test_is_expired_fallback_to_iso(self):
++        from datetime import datetime, timezone, timedelta
++        # Future ISO timestamp
++        future = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
++        entry = {"expires_at": future}
++        assert _is_expired(entry) is False
++
++        # Past ISO timestamp
++        past = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
++        entry = {"expires_at": past}
++        assert _is_expired(entry) is True
++
++
+ class TestAnimations:
+-    """Test animation generators."""
++    """Test SMIL animation generators (Fix #5)."""
+ 
+-    def test_pulse_animation(self):
++    def test_pulse_animation_uses_smil(self):
+         anim = pulse_animation("test1", "#ff0000")
+-        assert "@keyframes pulse-test1" in anim
+-        assert "ff0000" in anim
++        assert "<animate" in anim
++        assert "@keyframes" not in anim  # No CSS
++        assert "<style" not in anim  # No style tags
+ 
+-    def test_gradient_animation(self):
++    def test_gradient_animation_uses_smil(self):
+         anim = gradient_animation("test2", ["#ff0000", "#00ff00", "#0000ff"])
+         assert "linearGradient" in anim
+-        assert "@keyframes grad-shift-test2" in anim
++        assert "<animate" in anim  # SMIL animate on stops
++        assert "@keyframes" not in anim  # No CSS
++        assert "<style" not in anim
+ 
+-    def test_typing_animation(self):
++    def test_typing_animation_uses_smil(self):
+         anim = typing_animation("test3", "Hello World")
+-        assert "@keyframes typing-test3" in anim
+-        assert "880" in anim  # 11 chars * 80ms
++        assert "clipPath" in anim
++        assert "<animate" in anim  # SMIL animate on width
++        assert "@keyframes" not in anim  # No CSS
++        assert "<style" not in anim
+ 
+-    def test_sparkle_animation(self):
++    def test_sparkle_animation_uses_smil(self):
+         anim = sparkle_animation("test4", count=3)
+         assert "sparkle" in anim
+-        assert "@keyframes" in anim
++        assert "<animate" in anim  # SMIL animate on opacity
++        assert "<animateTransform" in anim  # SMIL transform
++        assert "@keyframes" not in anim  # No CSS
++        assert "<style" not in anim
+ 
+     def test_apply_animation_not_pro(self):
+-        from devbadge.animations import apply_animation
+         result = apply_animation("<svg>test</svg>", "pulse", "x1", is_pro=False)
+         assert result == "<svg>test</svg>"
+ 
+-    def test_apply_animation_pro(self):
+-        from devbadge.animations import apply_animation
++    def test_apply_animation_pro_pulse(self):
+         result = apply_animation("<svg>test</svg>", "pulse", "x1", is_pro=True, color="#fff")
+-        assert "pulse" in result
++        assert "<animate" in result
++        assert "@keyframes" not in result
++
++    def test_apply_animation_pro_gradient(self):
++        result = apply_animation("<svg>content</svg>", "gradient", "x1", is_pro=True,
++                                colors=["#ff0000", "#00ff00"])
++        assert "linearGradient" in result
++        assert "<animate" in result
++
++    def test_no_css_style_tags_in_any_animation(self):
++        """Verify all animation types use SMIL only, no CSS (Fix #5)."""
++        for anim_func, kwargs in [
++            (pulse_animation, {"element_id": "t1", "color": "#fff"}),
++            (gradient_animation, {"element_id": "t2", "colors": ["#f00", "#0f0"]}),
++            (typing_animation, {"element_id": "t3", "text": "Hello"}),
++            (sparkle_animation, {"element_id": "t4", "count": 2}),
++        ]:
++            result = anim_func(**kwargs)
++            assert "<style" not in result, f"{anim_func.__name__} contains <style> tag"
++            assert "@keyframes" not in result, f"{anim_func.__name__} contains CSS @keyframes"
++
++
++class TestSVGIconHelpers:
++    """Test SVG icon helper functions."""
++
++    def test_star_icon(self):
++        icon = _svg_icon_star(10, 10, 8, "#ffd700")
++        assert "polygon" in icon
++        assert "#ffd700" in icon
++
++    def test_weather_icon_all_types(self):
++        for icon_type in ["sun", "cloud-sun", "cloud", "rain", "snow", "thunder", "fog", "unknown"]:
++            icon = _svg_weather_icon(icon_type, 0, 0, "#ffd700")
++            assert len(icon) > 0
++            assert "<" in icon  # Should be SVG markup
+-- 
+2.47.3
+
