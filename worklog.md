@@ -161,3 +161,33 @@ Stage Summary:
 - MiniApp buy button now clearly redirects user to bot chat
 - Flow: MiniApp → click "Перейти к оплате" → opens bot with deep link → bot sends invoice → user pays with Stars
 - Live at https://sochiautoparts.github.io/stars-pay-bot/
+---
+Task ID: 4
+Agent: main
+Task: Create DevBadge repo, add to StarsPay bot, configure everything
+
+Work Log:
+- Created sochiautoparts/devbadge repo on GitHub
+- Built complete DevBadge project (25 files, 3500+ lines)
+  - Core: SVG badge generator with 7 badge types (commits, languages, stats, activity, profile, coffee, spotify, weather)
+  - Themes: 8 themes (6 free + 2 Pro animated: neon, aurora)
+  - Animations: Pro-only SVG+CSS animations (pulse, gradient, typing, sparkle)
+  - CLI: generate, init, pro activate/status, themes
+  - GitHub Action: action.yml for automated badge generation
+  - License verification: same as gitmoji-ai (public JSON + REST API fallback)
+  - Tests: 41 tests covering all features
+  - Docs: Landing page with pricing and StarsPay integration
+- Added "devbadge" project to StarsPay bot config (prices: 149/999/2999 ⭐)
+- Added DevBadge Pro to MiniApp catalog
+- Pushed all changes
+- Enabled GitHub Pages for devbadge
+- Added STARSPAY_API_KEY secret for devbadge
+- Triggered Pages deployment for both repos
+- Restarted bot with new config
+
+Stage Summary:
+- 3 repos now active: stars-pay-bot, gitmoji-ai, devbadge
+- 2 projects in bot: gitmoji-ai + devbadge (both with plans 149/999/2999 ⭐)
+- All Pages live: stars-pay-bot, gitmoji-ai, devbadge
+- All secrets configured
+- Bot running with DevBadge in catalog
