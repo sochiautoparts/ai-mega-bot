@@ -160,11 +160,15 @@ class AIRouter:
                 elif task_type == "audio_tts":
                     result = await provider.text_to_speech(prompt, **kwargs)
                 elif task_type == "translate":
+                    # Pop source_lang/target_lang from kwargs to avoid double-passing
+                    _kw = dict(kwargs)
+                    src = _kw.pop("source_lang", "auto")
+                    tgt = _kw.pop("target_lang", "ru")
                     result = await provider.translate(
                         prompt,
-                        source_lang=kwargs.get("source_lang", "auto"),
-                        target_lang=kwargs.get("target_lang", "ru"),
-                        **kwargs,
+                        source_lang=src,
+                        target_lang=tgt,
+                        **_kw,
                     )
                 else:
                     # text, code

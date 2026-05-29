@@ -75,26 +75,24 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             max_age_days=limits.history_days,
         )
 
-    # Build messages for context
-    messages = []
-    if history:
-        messages.extend(history)
+    # Build system prompt for context
+    system_prompt = (
+        "Ты — AI Mega Bot, дружелюбный и умный AI-ассистент. "
+        "Отвечай на том языке, на котором задаёт вопрос пользователь. "
+        "Будь полезным, точным и лаконичным."
+    )
 
     # Save user message
     await db.add_chat_message(user_id, "user", text)
 
     try:
         # Route to AI
-        kwargs = {}
-        if messages:
-            kwargs["messages"] = messages
-
         result = await ai_router.route(
             task_type="text",
             prompt=text,
             user_id=user_id,
             tier=tier,
-            **kwargs,
+            system_prompt=system_prompt,
         )
 
         # Record usage

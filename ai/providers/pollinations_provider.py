@@ -45,7 +45,7 @@ class PollinationsProvider(BaseProvider):
     name: str = "pollinations"
     supports_streaming: bool = False
 
-    def __init__(self, api_key: str = "", timeout: float = 30.0):
+    def __init__(self, api_key: str = "", timeout: float = 60.0):
         # Pollinations doesn't need an API key
         super().__init__(api_key="", timeout=timeout)
 

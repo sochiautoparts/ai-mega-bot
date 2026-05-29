@@ -85,12 +85,12 @@ PROVIDER_CHAINS: Dict[str, List[str]] = {
 
 # ── Provider Timeouts (seconds) ─────────────────────────────
 PROVIDER_TIMEOUTS: Dict[str, float] = {
-    "text": 15.0,
-    "image": 45.0,
+    "text": 30.0,
+    "image": 60.0,
     "audio_stt": 30.0,
     "audio_tts": 30.0,
-    "translate": 15.0,
-    "code": 20.0,
+    "translate": 30.0,
+    "code": 30.0,
 }
 
 # ── Cache Settings ───────────────────────────────────────────
@@ -132,7 +132,7 @@ def _env_list(name: str, default: Optional[List[str]] = None) -> List[str]:
 
 # ── Bot Configuration ────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
-OWNER_ID: int = 265070804  # Bot owner — permanent Ultra admin, cannot be removed
+OWNER_ID: int = _env_int("OWNER_ID", 265070804)  # Bot owner — permanent Ultra admin, cannot be removed
 _raw_admin_ids: List[int] = [int(x) for x in _env_list("ADMIN_IDS", [str(OWNER_ID)]) if x.strip().isdigit()]
 ADMIN_IDS: List[int] = list(set(_raw_admin_ids + [OWNER_ID]))
 BOT_USERNAME: str = _env("BOT_USERNAME", "aimega_bot")
@@ -153,7 +153,7 @@ GH_REPO: str = _env("GH_REPO", "sochiautoparts/ai-mega-bot")
 # ── API Server ───────────────────────────────────────────────
 API_HOST: str = _env("API_HOST", "0.0.0.0")
 API_PORT: int = _env_int("API_PORT", 8080)
-API_SECRET: str = _env("API_SECRET", "sk_aimghub_xK9mP2vL4nQ7rW")
+API_SECRET: str = _env("API_SECRET", "")
 
 # ── Database ─────────────────────────────────────────────────
 DB_PATH: str = _env("DB_PATH", "data/bot.db")
