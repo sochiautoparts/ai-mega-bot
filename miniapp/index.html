@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Mega Bot — AI-хаб в Telegram</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="app">
+        <!-- Hero Section -->
+        <header class="hero">
+            <div class="hero-icon">🤖</div>
+            <h1>AI Mega Bot</h1>
+            <p class="hero-subtitle">Мультифункциональный AI-хаб в Telegram</p>
+            <p class="hero-desc">Чат • Картинки • Перевод • Код • Аудио</p>
+        </header>
+
+        <!-- Features -->
+        <section class="features">
+            <div class="feature-card">
+                <span class="feature-icon">💬</span>
+                <h3>Чат с AI</h3>
+                <p>Общайтесь с нейросетями: Llama 3.3 70B, DeepSeek, GPT-4o mini</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🎨</span>
+                <h3>Генерация картинок</h3>
+                <p>Создавайте изображения по описанию через Flux и Stable Diffusion</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🌍</span>
+                <h3>Перевод</h3>
+                <p>Мгновенный перевод на 30+ языков через NLLB-200</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">🎤</span>
+                <h3>Аудио</h3>
+                <p>Транскрипция голосовых сообщений и текст в речь</p>
+            </div>
+            <div class="feature-card">
+                <span class="feature-icon">💻</span>
+                <h3>Помощь с кодом</h3>
+                <p>Отладка, оптимизация и генерация кода</p>
+            </div>
+        </section>
+
+        <!-- Pricing -->
+        <section class="pricing">
+            <h2>Тарифы</h2>
+            
+            <div class="tier-card tier-free">
+                <div class="tier-header">
+                    <span class="tier-badge">🆓</span>
+                    <h3>Free</h3>
+                </div>
+                <div class="tier-price">0 ★</div>
+                <ul class="tier-features">
+                    <li>💬 10 чатов/день</li>
+                    <li>🎨 3 картинки/день</li>
+                    <li>🎤 1 аудио/день</li>
+                    <li>🌍 5 переводов/день</li>
+                    <li>💻 5 запросов кода/день</li>
+                    <li class="disabled">❌ Быстрые модели</li>
+                    <li class="disabled">❌ История чата</li>
+                </ul>
+                <button class="btn btn-disabled" disabled>Базовый план</button>
+            </div>
+
+            <div class="tier-card tier-pro">
+                <div class="tier-header">
+                    <span class="tier-badge">⭐</span>
+                    <h3>Pro</h3>
+                </div>
+                <div class="tier-price">149 ★<span>/мес</span></div>
+                <ul class="tier-features">
+                    <li>💬 200 чатов/день</li>
+                    <li>🎨 30 картинок/день</li>
+                    <li>🎤 20 аудио/день</li>
+                    <li>🌍 100 переводов/день</li>
+                    <li>💻 100 запросов кода</li>
+                    <li>✅ Быстрые модели</li>
+                    <li>✅ История 7 дней</li>
+                </ul>
+                <button class="btn btn-pro" onclick="buyPlan('pro', 'month')">149 ★ / мес</button>
+                <button class="btn btn-pro-outline" onclick="buyPlan('pro', 'year')">999 ★ / год</button>
+                <button class="btn btn-pro-outline" onclick="buyPlan('pro', 'lifetime')">2999 ★ навсегда</button>
+            </div>
+
+            <div class="tier-card tier-ultra">
+                <div class="tier-popular">САМЫЙ ПОПУЛЯРНЫЙ</div>
+                <div class="tier-header">
+                    <span class="tier-badge">💎</span>
+                    <h3>Ultra</h3>
+                </div>
+                <div class="tier-price">499 ★<span>/мес</span></div>
+                <ul class="tier-features">
+                    <li>💬 Безлимитный чат</li>
+                    <li>🎨 100 картинок/день</li>
+                    <li>🎤 50 аудио/день</li>
+                    <li>🌍 Безлимитный перевод</li>
+                    <li>💻 Безлимитный код</li>
+                    <li>✅ Все модели</li>
+                    <li>✅ История 30 дней</li>
+                </ul>
+                <button class="btn btn-ultra" onclick="buyPlan('ultra', 'month')">499 ★ / мес</button>
+                <button class="btn btn-ultra-outline" onclick="buyPlan('ultra', 'year')">3499 ★ / год</button>
+                <button class="btn btn-ultra-outline" onclick="buyPlan('ultra', 'lifetime')">9999 ★ навсегда</button>
+            </div>
+        </section>
+
+        <!-- Referral -->
+        <section class="referral">
+            <h2>🔗 Реферальная программа</h2>
+            <p>Приглашайте друзей и получайте бонус за каждую их подписку!</p>
+            <p class="referral-bonus">🎁 до 50 ★ за каждого друга</p>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>AI Mega Bot © 2025</p>
+            <p>Работает на бесплатных AI API</p>
+            <p>Groq • OpenRouter • Gemini • HuggingFace • Pollinations</p>
+        </footer>
+    </div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>

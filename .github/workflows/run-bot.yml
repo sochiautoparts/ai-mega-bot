@@ -1,0 +1,74 @@
+name: Run AI Mega Bot 24/7
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Run every 5 hours and 45 minutes (session is 5h45m, cron restarts)
+    - cron: '15 0,6,12,18 * * *'
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'miniapp/**'
+
+concurrency:
+  group: bot-session
+  cancel-in-progress: false
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345  # 5h 45m
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create data directory
+        run: mkdir -p data
+
+      - name: Run AI Mega Bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+          BOT_USERNAME: aimega_bot
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          API_SECRET: ${{ secrets.API_SECRET }}
+          DB_PATH: data/bot.db
+          LOG_LEVEL: INFO
+        run: |
+          python -m bot.main
+
+      - name: Trigger next session
+        if: always()
+        run: |
+          gh workflow run run-bot.yml
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+
+  keep-alive:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - name: Trigger bot workflow
+        run: |
+          gh workflow run run-bot.yml
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}

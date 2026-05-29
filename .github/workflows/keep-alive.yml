@@ -1,0 +1,25 @@
+name: Keep Alive
+
+on:
+  schedule:
+    # Every 30 minutes check if bot is running
+    - cron: '*/30 * * * *'
+
+jobs:
+  check-and-restart:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if bot workflow is running
+        run: |
+          # Check if run-bot workflow has an active run
+          RUNNING=$(gh run list --workflow=run-bot.yml --status=in_progress --limit 1 --json databaseId 2>/dev/null || echo "[]")
+          QUEUED=$(gh run list --workflow=run-bot.yml --status=queued --limit 1 --json databaseId 2>/dev/null || echo "[]")
+
+          if [ "$RUNNING" = "[]" ] && [ "$QUEUED" = "[]" ]; then
+            echo "No active bot session found. Triggering new run..."
+            gh workflow run run-bot.yml
+          else
+            echo "Bot session is active. No action needed."
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}

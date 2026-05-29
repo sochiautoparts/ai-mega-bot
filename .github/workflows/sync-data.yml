@@ -1,0 +1,25 @@
+name: Sync Data
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Every hour
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check and commit data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # The run-bot workflow already commits data on shutdown
+          # This workflow ensures any missed syncs are caught
+          git diff --quiet || git commit -m "📊 Periodic data sync $(date +%Y-%m-%d_%H:%M)"
+          git push
