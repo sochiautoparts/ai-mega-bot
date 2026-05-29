@@ -79,6 +79,12 @@ class AIRouter:
                     provider = provider_cls(timeout=PROVIDER_TIMEOUTS.get("image", 45.0))
                 elif name == "prodia":
                     provider = provider_cls(timeout=PROVIDER_TIMEOUTS.get("image", 45.0))
+                elif name == "cerebras":
+                    from bot.config import CEREBRAS_API_KEY
+                    provider = provider_cls(
+                        api_key=CEREBRAS_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
+                    )
                 else:
                     continue
 
