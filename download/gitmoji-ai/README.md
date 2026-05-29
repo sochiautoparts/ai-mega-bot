@@ -246,34 +246,37 @@ jobs:
 - **Team features** — shared settings and changelogs
 - **Priority support** — faster responses
 
-### 💜 Get Pro via GitHub Sponsors (recommended)
+### 💳 Get Pro via Telegram Stars (instant!)
 
-Your sponsorship = your Pro license. Cancel anytime.
+Purchase directly in Telegram — pay with Stars, get your license key in seconds!
+
+👉 **[@allstarspay_bot](https://t.me/allstarspay_bot)** — click to buy!
 
 | Plan | Price | Best for |
 |------|-------|----------|
 | **Free** | $0 | Personal projects |
-| **Pro** | $5/month | Professional developers |
-| **Team** | $20/month | Teams & organizations |
+| **Pro** | ⭐ 500/month (~$5) | Professional developers |
+| **Pro Year** | ⭐ 4,500/year (~$45) | Best value — save 25% |
+| **Team** | ⭐ 2,000/month (~$20) | Teams & organizations |
+| **Lifetime** | ⭐ 5,000 (~$50) | Pay once, use forever |
 
 **3 steps to Pro:**
 
 ```bash
-# 1. Sponsor the project
-# 👉 https://github.com/sponsors/sochiautoparts
+# 1. Open @allstarspay_bot in Telegram and pay with Stars
+#    👉 https://t.me/allstarspay_bot
 
-# 2. Link your GitHub account
-gmai pro login <your-github-pat>
-# (Create PAT: github.com/settings/tokens/new?scopes=read:user)
+# 2. Copy your license key (format: SP-GMA-xxxxxx)
 
-# 3. Done! Pro is active ✅
-gmai pro status
+# 3. Activate:
+gmai pro activate SP-GMA-xxxxxxxx
 ```
 
-**Or use a license key:**
+**Or activate with an existing key:**
 
 ```bash
 gmai pro activate YOUR-LICENSE-KEY
+gmai pro status    # Check your license
 ```
 
 ---
