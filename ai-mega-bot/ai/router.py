@@ -85,6 +85,12 @@ class AIRouter:
                         api_key=CEREBRAS_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
                     )
+                elif name == "grok":
+                    from bot.config import GROK_API_KEY
+                    provider = provider_cls(
+                        api_key=GROK_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
                 else:
                     continue
 
@@ -174,6 +180,12 @@ class AIRouter:
                     # text, code
                     result = await provider.generate(prompt, **kwargs)
 
+                # Validate result has content
+                has_content = bool(result.text or result.image_bytes or result.image_url or result.audio_bytes)
+                if not has_content:
+                    logger.warning(f"Provider {provider_name} returned empty result, trying next")
+                    continue
+
                 # Record usage
                 await self.limiter.record_usage(
                     provider_name, user_id, task_type, result.tokens_used
@@ -201,6 +213,7 @@ class AIRouter:
                 logger.error(f"Unexpected error from {provider_name}: {e}")
                 continue
 
+        logger.error(f"All providers exhausted for {task_type}. Last error: {last_error}")
         raise AllProvidersExhaustedError(task_type)
 
     async def get_status(self) -> Dict[str, Any]:

@@ -8,6 +8,7 @@ from ai.providers.huggingface_provider import HuggingFaceProvider
 from ai.providers.pollinations_provider import PollinationsProvider
 from ai.providers.prodia_provider import ProdiaProvider
 from ai.providers.cerebras_provider import CerebrasProvider
+from ai.providers.grok_provider import GrokProvider
 
 ALL_PROVIDERS = {
     "groq": GroqProvider,
@@ -23,4 +24,5 @@ ALL_PROVIDERS = {
     "prodia": ProdiaProvider,
     "groq_whisper": GroqProvider,
     "cerebras": CerebrasProvider,
+    "grok": GrokProvider,
 }

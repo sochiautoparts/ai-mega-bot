@@ -52,9 +52,10 @@ class PollinationsProvider(BaseProvider):
     async def init(self) -> None:
         """Initialize httpx async client with connection pooling."""
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(self.timeout, connect=10.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            timeout=httpx.Timeout(self.timeout, connect=15.0),
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=20),
             follow_redirects=True,
+            headers={"User-Agent": "AI-Mega-Bot/1.0"},
         )
 
     def is_available(self) -> bool:
