@@ -11,8 +11,10 @@ logger = logging.getLogger(__name__)
 CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 FREE_MODELS = {
-    "default": "deepseek/deepseek-chat-v3-0324:free",
-    "llama": "meta-llama/llama-3.1-8b-instruct:free",
+    "default": "google/gemma-4-31b-it:free",
+    "fast": "qwen/qwen3-coder:free",
+    "reasoning": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+    "code": "qwen/qwen3-coder:free",
 }
 
 

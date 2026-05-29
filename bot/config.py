@@ -73,15 +73,16 @@ PLANS: Dict[str, Plan] = {
 }
 
 # ── AI Provider Priority Chains ──────────────────────────────
-# Grok/xAI and OpenRouter are fast and reliable — use them first when keys are available
-# Pollinations is FREE and always available (no key needed) — serves as the ultimate fallback
+# OpenRouter has free models with the user's key — fast and reliable
+# Groq is fast with the user's key — great for text and code
+# Pollinations is FREE and always available (no key needed) — ultimate fallback
 PROVIDER_CHAINS: Dict[str, List[str]] = {
-    "text": ["grok", "openrouter", "groq", "cerebras", "pollinations", "github_models", "gemini", "huggingface"],
+    "text": ["openrouter", "groq", "cerebras", "pollinations", "github_models", "gemini", "huggingface"],
     "image": ["pollinations", "prodia", "huggingface_img"],
     "audio_stt": ["groq_whisper", "huggingface_whisper"],
     "audio_tts": ["huggingface_tts"],
-    "translate": ["grok", "openrouter", "groq", "cerebras", "pollinations", "gemini", "huggingface_nllb"],
-    "code": ["grok", "openrouter", "groq", "cerebras", "pollinations", "github_models"],
+    "translate": ["openrouter", "groq", "cerebras", "pollinations", "gemini", "huggingface_nllb"],
+    "code": ["openrouter", "groq", "cerebras", "pollinations", "github_models"],
 }
 
 # ── Provider Timeouts (seconds) ─────────────────────────────
