@@ -73,18 +73,26 @@ PLANS: Dict[str, Plan] = {
 }
 
 # ── AI Provider Priority Chains ──────────────────────────────
-# OpenRouter has free models with the user's key — fast and reliable
-# Groq is fast with the user's key — great for text and code
-# Pollinations is FREE and always available (no key needed) — ultimate fallback
-# Vision chain: providers that support image understanding
+# Order: fastest/most reliable first, free fallback last
+# New providers: sambanova, mistral, cloudflare add more resilience
 PROVIDER_CHAINS: Dict[str, List[str]] = {
-    "text": ["openrouter", "groq", "cerebras", "pollinations", "github_models", "gemini", "huggingface"],
+    "text": [
+        "sambanova", "groq", "cerebras", "mistral", "cloudflare",
+        "openrouter", "grok", "pollinations", "github_models",
+        "gemini", "huggingface",
+    ],
     "image": ["pollinations", "prodia", "huggingface_img"],
     "vision": ["openrouter", "groq", "pollinations", "gemini"],
     "audio_stt": ["groq_whisper", "huggingface_whisper"],
     "audio_tts": ["huggingface_tts"],
-    "translate": ["openrouter", "groq", "cerebras", "pollinations", "gemini", "huggingface_nllb"],
-    "code": ["openrouter", "groq", "cerebras", "pollinations", "github_models"],
+    "translate": [
+        "sambanova", "groq", "cerebras", "mistral", "cloudflare",
+        "openrouter", "pollinations", "gemini", "huggingface_nllb",
+    ],
+    "code": [
+        "sambanova", "groq", "cerebras", "mistral", "cloudflare",
+        "openrouter", "pollinations", "github_models",
+    ],
 }
 
 # ── Provider Timeouts (seconds) ─────────────────────────────
@@ -112,11 +120,10 @@ SESSION_DURATION_SECONDS = 20700  # 5h 45m = 345 min
 
 
 def _env(name: str, default: str = "") -> str:
-    """Get environment variable or raise error for required ones."""
+    """Get environment variable, treating 'not_configured' as empty."""
     val = os.environ.get(name, default)
-    if not val and not default:
-        # For optional vars, return empty; required vars checked at startup
-        pass
+    if val in ("not_configured", "NOT_CONFIGURED", ""):
+        return default
     return val
 
 
@@ -137,7 +144,7 @@ def _env_list(name: str, default: Optional[List[str]] = None) -> List[str]:
 
 # ── Bot Configuration ────────────────────────────────────────
 BOT_TOKEN: str = _env("BOT_TOKEN")
-OWNER_ID: int = _env_int("OWNER_ID", 265070804)  # Bot owner — permanent Ultra admin, cannot be removed
+OWNER_ID: int = _env_int("OWNER_ID", 265070804)
 _raw_admin_ids: List[int] = [int(x) for x in _env_list("ADMIN_IDS", [str(OWNER_ID)]) if x.strip().isdigit()]
 ADMIN_IDS: List[int] = list(set(_raw_admin_ids + [OWNER_ID]))
 BOT_USERNAME: str = _env("BOT_USERNAME", "aimega_bot")
@@ -151,6 +158,10 @@ GEMINI_API_KEY: str = _env("GEMINI_API_KEY")
 HF_TOKEN: str = _env("HF_TOKEN")
 CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
 GROK_API_KEY: str = _env("GROK_API_KEY")
+SAMBANOVA_API_KEY: str = _env("SAMBANOVA_API_KEY")
+MISTRAL_API_KEY: str = _env("MISTRAL_API_KEY")
+CLOUDFLARE_API_TOKEN: str = _env("CLOUDFLARE_API_TOKEN")
+CLOUDFLARE_ACCOUNT_ID: str = _env("CLOUDFLARE_ACCOUNT_ID")
 
 # ── GitHub (for Actions, keep-alive, data sync) ─────────────
 GH_PAT_TOKEN: str = _env("GH_PAT_TOKEN")
@@ -173,7 +184,6 @@ def validate_config() -> List[str]:
     missing = []
     if not BOT_TOKEN:
         missing.append("BOT_TOKEN")
-    # AI keys are optional — bot works with whatever is available
     return missing
 
 
@@ -189,9 +199,12 @@ def get_provider_keys() -> Dict[str, bool]:
         "huggingface_whisper": bool(HF_TOKEN),
         "huggingface_tts": bool(HF_TOKEN),
         "huggingface_nllb": bool(HF_TOKEN),
-        "pollinations": True,  # No key needed — ALWAYS available
-        "prodia": True,        # Uses Pollinations fallback
+        "pollinations": True,
+        "prodia": True,
         "groq_whisper": bool(GROQ_API_KEY),
         "cerebras": bool(CEREBRAS_API_KEY),
         "grok": bool(GROK_API_KEY),
+        "sambanova": bool(SAMBANOVA_API_KEY),
+        "mistral": bool(MISTRAL_API_KEY),
+        "cloudflare": bool(CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID),
     }

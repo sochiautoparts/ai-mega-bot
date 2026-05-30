@@ -9,6 +9,9 @@ from ai.providers.pollinations_provider import PollinationsProvider
 from ai.providers.prodia_provider import ProdiaProvider
 from ai.providers.cerebras_provider import CerebrasProvider
 from ai.providers.grok_provider import GrokProvider
+from ai.providers.sambanova_provider import SambaNovaProvider
+from ai.providers.mistral_provider import MistralProvider
+from ai.providers.cloudflare_provider import CloudflareProvider
 
 ALL_PROVIDERS = {
     "groq": GroqProvider,
@@ -25,4 +28,7 @@ ALL_PROVIDERS = {
     "groq_whisper": GroqProvider,
     "cerebras": CerebrasProvider,
     "grok": GrokProvider,
+    "sambanova": SambaNovaProvider,
+    "mistral": MistralProvider,
+    "cloudflare": CloudflareProvider,
 }

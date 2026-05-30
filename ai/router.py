@@ -31,13 +31,19 @@ class AIRouter:
 
     async def init(self) -> None:
         """Initialize all available providers."""
+        from bot.config import (
+            GROQ_API_KEY, OPENROUTER_API_KEY, GITHUB_TOKEN, GEMINI_API_KEY,
+            HF_TOKEN, CEREBRAS_API_KEY, GROK_API_KEY,
+            SAMBANOVA_API_KEY, MISTRAL_API_KEY,
+            CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID,
+        )
+
         available_keys = get_provider_keys()
 
         for name, provider_cls in ALL_PROVIDERS.items():
             try:
                 if name.startswith("huggingface"):
                     sub_type = name.replace("huggingface", "").lstrip("_") or "text"
-                    from bot.config import HF_TOKEN
                     provider = provider_cls(
                         api_key=HF_TOKEN,
                         sub_type=sub_type,
@@ -45,32 +51,27 @@ class AIRouter:
                     )
                     provider.name = name
                 elif name == "groq_whisper":
-                    from bot.config import GROQ_API_KEY
                     provider = provider_cls(
                         api_key=GROQ_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("audio_stt", 30.0),
                     )
                     provider.name = name
                 elif name == "groq":
-                    from bot.config import GROQ_API_KEY
                     provider = provider_cls(
                         api_key=GROQ_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
                     )
                 elif name == "openrouter":
-                    from bot.config import OPENROUTER_API_KEY
                     provider = provider_cls(
                         api_key=OPENROUTER_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
                     )
                 elif name == "github_models":
-                    from bot.config import GITHUB_TOKEN
                     provider = provider_cls(
                         api_key=GITHUB_TOKEN,
                         timeout=PROVIDER_TIMEOUTS.get("code", 20.0),
                     )
                 elif name == "gemini":
-                    from bot.config import GEMINI_API_KEY
                     provider = provider_cls(
                         api_key=GEMINI_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
@@ -80,16 +81,30 @@ class AIRouter:
                 elif name == "prodia":
                     provider = provider_cls(timeout=PROVIDER_TIMEOUTS.get("image", 45.0))
                 elif name == "cerebras":
-                    from bot.config import CEREBRAS_API_KEY
                     provider = provider_cls(
                         api_key=CEREBRAS_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
                     )
                 elif name == "grok":
-                    from bot.config import GROK_API_KEY
                     provider = provider_cls(
                         api_key=GROK_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "sambanova":
+                    provider = provider_cls(
+                        api_key=SAMBANOVA_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "mistral":
+                    provider = provider_cls(
+                        api_key=MISTRAL_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "cloudflare":
+                    provider = provider_cls(
+                        api_key=CLOUDFLARE_API_TOKEN,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                        account_id=CLOUDFLARE_ACCOUNT_ID,
                     )
                 else:
                     continue
@@ -126,21 +141,7 @@ class AIRouter:
         tier: str = "free",
         **kwargs,
     ) -> AIResponse:
-        """Route a request to the best available provider.
-
-        Args:
-            task_type: Type of task (text, image, audio_stt, audio_tts, translate, code, vision)
-            prompt: User's prompt/message
-            user_id: Telegram user ID
-            tier: User's subscription tier
-            **kwargs: Additional args including:
-                messages: conversation history
-                system_prompt: system instructions
-                image_data: raw image bytes (for vision)
-                image_url: image URL (for vision)
-                audio_data: raw audio bytes (for transcription)
-        """
-        # Check cache first (only for text/translate/code without history)
+        """Route a request to the best available provider."""
         messages = kwargs.get("messages")
         if not messages:
             cached = await self.cache.get(prompt, task_type, **kwargs)
@@ -167,7 +168,6 @@ class AIRouter:
             if not provider:
                 continue
 
-            # Check rate limits
             if not await self.limiter.can_use(provider_name, user_id, tier):
                 logger.info(f"Rate limit hit for {provider_name}, trying next")
                 continue
@@ -175,18 +175,15 @@ class AIRouter:
             try:
                 result = await self._call_provider(provider, task_type, prompt, **kwargs)
 
-                # Validate result has content
                 has_content = bool(result.text or result.image_bytes or result.image_url or result.audio_bytes)
                 if not has_content:
                     logger.warning(f"Provider {provider_name} returned empty result, trying next")
                     continue
 
-                # Record usage
                 await self.limiter.record_usage(
                     provider_name, user_id, task_type, result.tokens_used
                 )
 
-                # Cache the result (only for non-history requests)
                 if not messages:
                     cache_data = {
                         "text": result.text,
@@ -233,7 +230,6 @@ class AIRouter:
             tgt = _kw.pop("target_lang", "ru")
             return await provider.translate(prompt, source_lang=src, target_lang=tgt, **_kw)
         elif task_type == "vision":
-            # Vision task — use generate_with_vision if available
             image_data = kwargs.get("image_data", b"")
             image_url = kwargs.get("image_url", "")
             if provider.supports_vision:
@@ -244,14 +240,12 @@ class AIRouter:
                     **kwargs,
                 )
             else:
-                # Fallback: describe that we can't process images with this provider
                 return await provider.generate(prompt, **kwargs)
         else:
-            # text, code — use generate with history
             return await provider.generate(prompt, **kwargs)
 
     def get_vision_providers(self) -> List[str]:
-        """Get list of providers that support vision (image understanding)."""
+        """Get list of providers that support vision."""
         return [
             name for name, provider in self.providers.items()
             if provider.supports_vision
