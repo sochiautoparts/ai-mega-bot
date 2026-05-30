@@ -1,6 +1,6 @@
 """Base AI Provider."""
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 
 
@@ -32,6 +32,7 @@ class BaseProvider:
 
     name: str = "base"
     supports_streaming: bool = False
+    supports_vision: bool = False  # Whether provider can handle images
 
     def __init__(self, api_key: str = "", timeout: float = 15.0):
         self.api_key = api_key
@@ -49,7 +50,37 @@ class BaseProvider:
             self._client = None
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text response."""
+        """Generate text response.
+
+        Args:
+            prompt: The user's current message text
+            **kwargs: Additional options including:
+                messages: List[Dict] - conversation history with role/content
+                system_prompt: str - system instructions
+                model: str - model override
+                temperature: float
+                max_tokens: int
+        """
+        raise NotImplementedError
+
+    async def generate_with_vision(
+        self,
+        prompt: str,
+        image_data: bytes = b"",
+        image_url: str = "",
+        **kwargs,
+    ) -> AIResponse:
+        """Generate response with image understanding (vision).
+
+        Args:
+            prompt: User's text about the image
+            image_data: Raw image bytes (will be base64-encoded)
+            image_url: URL of the image (alternative to image_data)
+            **kwargs: Same as generate()
+        """
+        # Default: fall back to text-only if provider doesn't support vision
+        if not self.supports_vision:
+            return await self.generate(prompt, **kwargs)
         raise NotImplementedError
 
     async def generate_image(self, prompt: str, **kwargs) -> AIResponse:
@@ -82,3 +113,29 @@ class BaseProvider:
         if self.name in self.NO_KEY_PROVIDERS:
             return True
         return bool(self.api_key)
+
+    @staticmethod
+    def _build_messages(
+        prompt: str,
+        system_prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Build OpenAI-compatible messages array with history.
+
+        Args:
+            prompt: Current user message
+            system_prompt: System instructions
+            messages: Conversation history (list of {role, content} dicts)
+
+        Returns:
+            Complete messages array for API call
+        """
+        result: List[Dict[str, Any]] = []
+        if system_prompt:
+            result.append({"role": "system", "content": system_prompt})
+        # Add conversation history (previous messages)
+        if messages:
+            result.extend(messages)
+        # Add current user message
+        result.append({"role": "user", "content": prompt})
+        return result

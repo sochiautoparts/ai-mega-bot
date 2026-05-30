@@ -76,9 +76,11 @@ PLANS: Dict[str, Plan] = {
 # OpenRouter has free models with the user's key — fast and reliable
 # Groq is fast with the user's key — great for text and code
 # Pollinations is FREE and always available (no key needed) — ultimate fallback
+# Vision chain: providers that support image understanding
 PROVIDER_CHAINS: Dict[str, List[str]] = {
     "text": ["openrouter", "groq", "cerebras", "pollinations", "github_models", "gemini", "huggingface"],
     "image": ["pollinations", "prodia", "huggingface_img"],
+    "vision": ["openrouter", "groq", "pollinations", "gemini"],
     "audio_stt": ["groq_whisper", "huggingface_whisper"],
     "audio_tts": ["huggingface_tts"],
     "translate": ["openrouter", "groq", "cerebras", "pollinations", "gemini", "huggingface_nllb"],
@@ -89,6 +91,7 @@ PROVIDER_CHAINS: Dict[str, List[str]] = {
 PROVIDER_TIMEOUTS: Dict[str, float] = {
     "text": 30.0,
     "image": 60.0,
+    "vision": 45.0,
     "audio_stt": 30.0,
     "audio_tts": 30.0,
     "translate": 30.0,

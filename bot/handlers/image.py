@@ -104,6 +104,11 @@ async def cmd_image(message: Message, db=None, ai_router=None) -> None:
                 parse_mode="HTML",
             )
 
+        # Save to chat history
+        if db:
+            await db.add_chat_message(user_id, "user", f"[Генерация картинки] {prompt[:200]}")
+            await db.add_chat_message(user_id, "assistant", f"🎨 Сгенерирована картинка: {prompt[:200]}", tokens=result.tokens_used)
+
         # Delete status message
         try:
             await status_msg.delete()

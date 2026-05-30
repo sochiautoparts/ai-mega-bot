@@ -1,10 +1,12 @@
-"""Grok (xAI) Provider — fast inference via OpenAI-compatible API.
+"""xAI Grok Provider — Grok models via xAI API (OpenAI-compatible).
 
-xAI's Grok models accessible at https://api.x.ai/v1/
-Uses the standard OpenAI chat completions format.
+Supports:
+  - Text generation with conversation history
+  - Translation via system prompt
+  - Vision not currently available via free tier
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -12,21 +14,21 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-CHAT_URL = "https://api.x.ai/v1/chat/completions"
-
+# ── Model registry ───────────────────────────────────────────
 TEXT_MODELS = {
     "default": "grok-3-mini-fast",
-    "fast": "grok-3-mini-fast",
     "reasoning": "grok-3-mini",
-    "code": "grok-3-mini-fast",
 }
+
+CHAT_URL = "https://api.x.ai/v1/chat/completions"
 
 
 class GrokProvider(BaseProvider):
-    """Grok (xAI) provider using httpx for maximum performance."""
+    """xAI Grok provider using httpx for OpenAI-compatible API."""
 
     name: str = "grok"
     supports_streaming: bool = False
+    supports_vision: bool = False
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
@@ -39,12 +41,12 @@ class GrokProvider(BaseProvider):
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
-            timeout=httpx.Timeout(self.timeout, connect=10.0),
+            timeout=httpx.Timeout(self.timeout, connect=5.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Grok chat completions."""
+        """Generate text via Grok chat completions with conversation history."""
         if not self._client:
             await self.init()
 
@@ -53,11 +55,10 @@ class GrokProvider(BaseProvider):
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
+        messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
 
-        messages: List[Dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        # Build messages with history support
+        messages = self._build_messages(prompt, system_prompt, messages_history)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -134,4 +135,4 @@ class GrokProvider(BaseProvider):
                 f"Maintain the original tone and style."
             )
 
-        return await self.generate(text, system_prompt=system_prompt, model_key="fast")
+        return await self.generate(text, system_prompt=system_prompt, **kwargs)

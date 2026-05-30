@@ -3,6 +3,7 @@ AI Mega Bot — Chat Handler.
 
 Routes plain text messages to AI as "text" task.
 Manages chat history and daily limits.
+Passes conversation history to AI providers for context memory.
 """
 import logging
 
@@ -23,12 +24,12 @@ async def cmd_clear(message: Message, db=None) -> None:
     # db is injected from workflow_data
     if db:
         await db.clear_chat_history(message.from_user.id)
-    await message.answer("🗑 История чата очищена!")
+    await message.answer("🗑 История чата очищена! Начнём сначала.")
 
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def handle_chat(message: Message, db=None, ai_router=None) -> None:
-    """Handle any text message (non-command) as AI chat."""
+    """Handle any text message (non-command) as AI chat with context memory."""
     # db and ai_router are injected from workflow_data
 
     if not db or not ai_router:
@@ -66,7 +67,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     # Show typing indicator
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
-    # Get chat history
+    # Get chat history for context memory
     history = []
     if limits.history_days > 0:
         history = await db.get_chat_history(
@@ -79,20 +80,22 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     system_prompt = (
         "Ты — AI Mega Bot, дружелюбный и умный AI-ассистент. "
         "Отвечай на том языке, на котором задаёт вопрос пользователь. "
-        "Будь полезным, точным и лаконичным."
+        "Будь полезным, точным и лаконичным. "
+        "Учитывай контекст предыдущих сообщений в разговоре."
     )
 
-    # Save user message
+    # Save user message to history
     await db.add_chat_message(user_id, "user", text)
 
     try:
-        # Route to AI
+        # Route to AI WITH conversation history for context memory
         result = await ai_router.route(
             task_type="text",
             prompt=text,
             user_id=user_id,
             tier=tier,
             system_prompt=system_prompt,
+            messages=history,  # Pass conversation history!
         )
 
         # Record usage
@@ -100,7 +103,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             user_id, "text", result.provider, tokens=result.tokens_used
         )
 
-        # Save assistant message
+        # Save assistant message to history
         response_text = result.text or "⚠️ Пустой ответ от AI."
         await db.add_chat_message(
             user_id, "assistant", response_text, tokens=result.tokens_used

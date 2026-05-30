@@ -74,9 +74,26 @@ class HuggingFaceProvider(BaseProvider):
             await self.init()
 
         model: str = kwargs.get("model", self._model)
+        messages_history = kwargs.get("messages")
+        system_prompt: str = kwargs.get("system_prompt", "")
+
+        # For HuggingFace text generation, build a combined prompt with history
+        full_prompt = ""
+        if system_prompt:
+            full_prompt += f"<s>[INST] {system_prompt} [/INST]\n"
+        if messages_history:
+            for msg in messages_history:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    if role == "user":
+                        full_prompt += f"[INST] {content} [/INST]\n"
+                    elif role == "assistant":
+                        full_prompt += f"{content}\n"
+        full_prompt += f"[INST] {prompt} [/INST]\n"
 
         payload: Dict[str, Any] = {
-            "inputs": prompt,
+            "inputs": full_prompt,
             "parameters": {
                 "max_new_tokens": kwargs.get("max_tokens", 1024),
                 "temperature": kwargs.get("temperature", 0.7),

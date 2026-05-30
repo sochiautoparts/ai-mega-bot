@@ -20,7 +20,7 @@ class AllProvidersExhaustedError(Exception):
 
 
 class AIRouter:
-    """Central AI request router with fallback chains and caching."""
+    """Central AI request router with fallback chains, caching, and vision support."""
 
     def __init__(self, db):
         self.db = db
@@ -97,7 +97,7 @@ class AIRouter:
                 if provider.is_available():
                     await provider.init()
                     self.providers[name] = provider
-                    logger.info(f"Provider initialized: {name}")
+                    logger.info(f"Provider initialized: {name} (vision={provider.supports_vision})")
                 else:
                     logger.warning(f"Provider not available (no key): {name}")
 
@@ -126,21 +126,36 @@ class AIRouter:
         tier: str = "free",
         **kwargs,
     ) -> AIResponse:
-        """Route a request to the best available provider."""
-        # Check cache first
-        cached = await self.cache.get(prompt, task_type, **kwargs)
-        if cached:
-            return AIResponse(
-                text=cached.get("text", ""),
-                image_url=cached.get("image_url", ""),
-                image_bytes=cached.get("image_bytes", b"")
-                if isinstance(cached.get("image_bytes"), bytes)
-                else b"",
-                provider=cached.get("provider", "cache"),
-                model=cached.get("model", ""),
-                tokens_used=0,
-                metadata={"from_cache": True},
-            )
+        """Route a request to the best available provider.
+
+        Args:
+            task_type: Type of task (text, image, audio_stt, audio_tts, translate, code, vision)
+            prompt: User's prompt/message
+            user_id: Telegram user ID
+            tier: User's subscription tier
+            **kwargs: Additional args including:
+                messages: conversation history
+                system_prompt: system instructions
+                image_data: raw image bytes (for vision)
+                image_url: image URL (for vision)
+                audio_data: raw audio bytes (for transcription)
+        """
+        # Check cache first (only for text/translate/code without history)
+        messages = kwargs.get("messages")
+        if not messages:
+            cached = await self.cache.get(prompt, task_type, **kwargs)
+            if cached:
+                return AIResponse(
+                    text=cached.get("text", ""),
+                    image_url=cached.get("image_url", ""),
+                    image_bytes=cached.get("image_bytes", b"")
+                    if isinstance(cached.get("image_bytes"), bytes)
+                    else b"",
+                    provider=cached.get("provider", "cache"),
+                    model=cached.get("model", ""),
+                    tokens_used=0,
+                    metadata={"from_cache": True},
+                )
 
         chain = self._chains.get(task_type, [])
         if not chain:
@@ -158,27 +173,7 @@ class AIRouter:
                 continue
 
             try:
-                if task_type == "image":
-                    result = await provider.generate_image(prompt, **kwargs)
-                elif task_type == "audio_stt":
-                    audio_data = kwargs.get("audio_data", b"")
-                    result = await provider.transcribe(audio_data, **kwargs)
-                elif task_type == "audio_tts":
-                    result = await provider.text_to_speech(prompt, **kwargs)
-                elif task_type == "translate":
-                    # Pop source_lang/target_lang from kwargs to avoid double-passing
-                    _kw = dict(kwargs)
-                    src = _kw.pop("source_lang", "auto")
-                    tgt = _kw.pop("target_lang", "ru")
-                    result = await provider.translate(
-                        prompt,
-                        source_lang=src,
-                        target_lang=tgt,
-                        **_kw,
-                    )
-                else:
-                    # text, code
-                    result = await provider.generate(prompt, **kwargs)
+                result = await self._call_provider(provider, task_type, prompt, **kwargs)
 
                 # Validate result has content
                 has_content = bool(result.text or result.image_bytes or result.image_url or result.audio_bytes)
@@ -191,14 +186,15 @@ class AIRouter:
                     provider_name, user_id, task_type, result.tokens_used
                 )
 
-                # Cache the result
-                cache_data = {
-                    "text": result.text,
-                    "image_url": result.image_url,
-                    "provider": result.provider,
-                    "model": result.model,
-                }
-                await self.cache.put(prompt, task_type, cache_data, **kwargs)
+                # Cache the result (only for non-history requests)
+                if not messages:
+                    cache_data = {
+                        "text": result.text,
+                        "image_url": result.image_url,
+                        "provider": result.provider,
+                        "model": result.model,
+                    }
+                    await self.cache.put(prompt, task_type, cache_data, **kwargs)
 
                 return result
 
@@ -216,6 +212,51 @@ class AIRouter:
         logger.error(f"All providers exhausted for {task_type}. Last error: {last_error}")
         raise AllProvidersExhaustedError(task_type)
 
+    async def _call_provider(
+        self,
+        provider: BaseProvider,
+        task_type: str,
+        prompt: str,
+        **kwargs,
+    ) -> AIResponse:
+        """Call the appropriate provider method based on task type."""
+        if task_type == "image":
+            return await provider.generate_image(prompt, **kwargs)
+        elif task_type == "audio_stt":
+            audio_data = kwargs.get("audio_data", b"")
+            return await provider.transcribe(audio_data, **kwargs)
+        elif task_type == "audio_tts":
+            return await provider.text_to_speech(prompt, **kwargs)
+        elif task_type == "translate":
+            _kw = dict(kwargs)
+            src = _kw.pop("source_lang", "auto")
+            tgt = _kw.pop("target_lang", "ru")
+            return await provider.translate(prompt, source_lang=src, target_lang=tgt, **_kw)
+        elif task_type == "vision":
+            # Vision task — use generate_with_vision if available
+            image_data = kwargs.get("image_data", b"")
+            image_url = kwargs.get("image_url", "")
+            if provider.supports_vision:
+                return await provider.generate_with_vision(
+                    prompt,
+                    image_data=image_data,
+                    image_url=image_url,
+                    **kwargs,
+                )
+            else:
+                # Fallback: describe that we can't process images with this provider
+                return await provider.generate(prompt, **kwargs)
+        else:
+            # text, code — use generate with history
+            return await provider.generate(prompt, **kwargs)
+
+    def get_vision_providers(self) -> List[str]:
+        """Get list of providers that support vision (image understanding)."""
+        return [
+            name for name, provider in self.providers.items()
+            if provider.supports_vision
+        ]
+
     async def get_status(self) -> Dict[str, Any]:
         """Get status of all providers."""
         status: Dict[str, Any] = {}
@@ -227,6 +268,7 @@ class AIRouter:
                     "used_today": used,
                     "daily_limit": limit,
                     "remaining": max(0, limit - used),
+                    "vision": provider.supports_vision,
                 }
             except Exception as exc:
                 status[name] = {

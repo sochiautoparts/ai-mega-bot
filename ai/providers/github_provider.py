@@ -18,6 +18,7 @@ class GitHubModelsProvider(BaseProvider):
 
     name: str = "github_models"
     supports_streaming: bool = False
+    supports_vision: bool = False
 
     def __init__(self, api_key: str = "", timeout: float = 15.0):
         super().__init__(api_key=api_key, timeout=timeout)
@@ -35,7 +36,7 @@ class GitHubModelsProvider(BaseProvider):
         )
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via GitHub Models chat completions."""
+        """Generate text via GitHub Models chat completions with conversation history."""
         if not self._client:
             await self.init()
 
@@ -43,11 +44,10 @@ class GitHubModelsProvider(BaseProvider):
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
+        messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
 
-        messages: List[Dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        # Build messages with history support
+        messages = self._build_messages(prompt, system_prompt, messages_history)
 
         payload: Dict[str, Any] = {
             "model": model,

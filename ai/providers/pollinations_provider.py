@@ -1,15 +1,17 @@
 """Pollinations.ai Provider — FREE, no API key needed!
 
 Supports:
-  - Text generation via OpenAI-compatible POST API
+  - Text generation with conversation history via OpenAI-compatible POST API
   - Image generation via GET request (returns image bytes)
+  - Vision (image understanding) via openai model
   - Translation via text generation with system prompt
   - Code assistance via text generation with system prompt
 
 Pollinations is the ultimate fallback — always available, no key, no limits.
 """
+import base64
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 import httpx
@@ -27,6 +29,7 @@ TEXT_MODELS = {
     "fast": "mistral",        # Mistral Small
     "reasoning": "deepseek",  # DeepSeek V3
     "code": "deepseek",       # DeepSeek for code
+    "vision": "openai",       # openai model supports vision
 }
 
 IMAGE_MODELS = {
@@ -44,6 +47,7 @@ class PollinationsProvider(BaseProvider):
 
     name: str = "pollinations"
     supports_streaming: bool = False
+    supports_vision: bool = True  # via openai model
 
     def __init__(self, api_key: str = "", timeout: float = 60.0):
         # Pollinations doesn't need an API key
@@ -63,7 +67,7 @@ class PollinationsProvider(BaseProvider):
         return True
 
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Pollinations OpenAI-compatible POST API."""
+        """Generate text via Pollinations OpenAI-compatible POST API with history."""
         if not self._client:
             await self.init()
 
@@ -72,12 +76,10 @@ class PollinationsProvider(BaseProvider):
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
+        messages_history: Optional[List[Dict[str, Any]]] = kwargs.get("messages")
 
-        # Use POST endpoint (OpenAI-compatible) for better results
-        messages: List[Dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        # Build messages with history support
+        messages = self._build_messages(prompt, system_prompt, messages_history)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -124,6 +126,87 @@ class PollinationsProvider(BaseProvider):
             raise
         except Exception as exc:
             raise ProviderError(self.name, f"Unexpected error: {exc}", retryable=True)
+
+    async def generate_with_vision(
+        self,
+        prompt: str,
+        image_data: bytes = b"",
+        image_url: str = "",
+        **kwargs,
+    ) -> AIResponse:
+        """Generate response with image understanding via Pollinations openai model."""
+        if not self._client:
+            await self.init()
+
+        system_prompt: str = kwargs.get("system_prompt", "")
+        temperature: float = kwargs.get("temperature", 0.7)
+
+        # Build user message content with image
+        content_parts: List[Dict[str, Any]] = []
+        if image_data:
+            b64 = base64.b64encode(image_data).decode("utf-8")
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{b64}"
+                },
+            })
+        elif image_url:
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": image_url},
+            })
+        content_parts.append({"type": "text", "text": prompt})
+
+        messages: List[Dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content_parts})
+
+        payload: Dict[str, Any] = {
+            "model": TEXT_MODELS["vision"],
+            "messages": messages,
+            "temperature": temperature,
+        }
+
+        try:
+            response = await self._client.post(
+                f"{TEXT_BASE}/",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            response.raise_for_status()
+            text = response.text
+
+            if not text:
+                raise ProviderError(
+                    self.name,
+                    "Empty vision response from Pollinations",
+                    retryable=True,
+                )
+
+            return AIResponse(
+                text=text,
+                provider=self.name,
+                model=f"pollinations:{TEXT_MODELS['vision']}",
+                tokens_used=0,
+                metadata={"vision": True, "endpoint": "text_post"},
+            )
+
+        except httpx.TimeoutException as exc:
+            raise ProviderError(self.name, f"Vision request timed out: {exc}", retryable=True)
+        except httpx.HTTPStatusError as exc:
+            status = exc.response.status_code
+            retryable = status in (429, 500, 502, 503, 504)
+            raise ProviderError(
+                self.name,
+                f"Vision HTTP {status}: {exc.response.text[:200]}",
+                retryable=retryable,
+            )
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError(self.name, f"Vision error: {exc}", retryable=True)
 
     async def generate_image(self, prompt: str, **kwargs) -> AIResponse:
         """Generate image via Pollinations image endpoint."""
