@@ -51,12 +51,31 @@ jobs:
           curl -s -o /dev/null -w "Image API: HTTP %{http_code}, size %{size_download}" "https://image.pollinations.ai/prompt/test?width=256&height=256&seed=1&nologo=true&model=flux" --max-time 30 || echo "WARNING: Pollinations image API not reachable"
           echo ""
 
+      - name: Test Chutes AI API (free, no key)
+        run: |
+          echo "Testing Chutes AI API..."
+          curl -s -X POST "https://llm.chutes.ai/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"deepseek-ai/DeepSeek-V3-0324","messages":[{"role":"user","content":"Say hello"}],"temperature":0.7,"max_tokens":50}' \
+            --max-time 30 || echo "WARNING: Chutes AI API not reachable"
+          echo ""
+
+      - name: Test Blackbox AI API (free, no key)
+        run: |
+          echo "Testing Blackbox AI API..."
+          curl -s -X POST "https://www.blackbox.ai/api/v1/chat/completions" \
+            -H "Content-Type: application/json" \
+            -d '{"model":"blackboxai","messages":[{"role":"user","content":"Say hello"}],"temperature":0.7,"max_tokens":50}' \
+            --max-time 30 || echo "WARNING: Blackbox AI API not reachable"
+          echo ""
+
       - name: Run AI Mega Bot
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
           BOT_USERNAME: aimega_bot
+          # ── Existing provider keys ──
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
@@ -64,6 +83,17 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+          # ── New provider keys ──
+          SAMBAOVA_API_KEY: ${{ secrets.SAMBAOVA_API_KEY }}
+          CHUTES_API_KEY: ${{ secrets.CHUTES_API_KEY }}
+          TOGETHER_API_KEY: ${{ secrets.TOGETHER_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          BLACKBOX_API_KEY: ${{ secrets.BLACKBOX_API_KEY }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+          # ── Other ──
           GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           API_SECRET: ${{ secrets.API_SECRET }}
           DB_PATH: data/bot.db

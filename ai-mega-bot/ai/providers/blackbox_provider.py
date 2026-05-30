@@ -1,4 +1,4 @@
-"""TogetherProvider — Together AI — 200+ models, $5 free credits, OpenAI-compatible API."""
+"""BlackboxProvider — Blackbox AI — free code-focused AI, OpenAI-compatible API."""
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -8,29 +8,30 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-TEXT_MODELS = {"default": "meta-llama/Llama-3.3-70B-Instruct-Turbo", "fast": "meta-llama/Llama-3.1-8B-Instruct-Turbo", "reasoning": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free", "code": "Qwen/Qwen2.5-Coder-32B-Instruct"}
+TEXT_MODELS = {"default": "blackboxai", "fast": "blackboxai", "reasoning": "blackboxai-pro", "code": "blackboxai"}
 
 
-class TogetherProvider(BaseProvider):
-    """TogetherProvider — OpenAI-compatible API."""
+class BlackboxProvider(BaseProvider):
+    """BlackboxProvider — OpenAI-compatible API."""
 
-    name: str = "together"
+    name: str = "blackbox"
     supports_streaming: bool = False
+    NO_KEY_PROVIDERS = {"blackbox"}
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
         super().__init__(api_key=api_key, timeout=timeout)
 
     async def init(self) -> None:
         self._client = httpx.AsyncClient(
-            base_url="https://api.together.xyz",
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
+            base_url="https://www.blackbox.ai",
+            headers=headers,
             timeout=httpx.Timeout(self.timeout, connect=10.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
 
+    def is_available(self) -> bool:
+        """Always available — works with or without API key."""
+        return True
 
     def _build_messages(self, prompt: str, system_prompt: str = "", history: Optional[List[Dict[str, str]]] = None) -> List[Dict[str, str]]:
         messages: List[Dict[str, str]] = []
@@ -58,7 +59,7 @@ class TogetherProvider(BaseProvider):
         messages = self._build_messages(prompt, system_prompt, history)
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
         try:
-            response = await self._client.post("/v1/chat/completions", json=payload)
+            response = await self._client.post("/api/v1/chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
             choice = data["choices"][0]

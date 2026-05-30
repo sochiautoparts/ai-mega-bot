@@ -1,4 +1,4 @@
-"""TogetherProvider — Together AI — 200+ models, $5 free credits, OpenAI-compatible API."""
+"""CohereProvider — Cohere AI — Command R+, 1K free calls/month, OpenAI-compatible API."""
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -8,13 +8,13 @@ from ai.providers.base import AIResponse, BaseProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
-TEXT_MODELS = {"default": "meta-llama/Llama-3.3-70B-Instruct-Turbo", "fast": "meta-llama/Llama-3.1-8B-Instruct-Turbo", "reasoning": "deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free", "code": "Qwen/Qwen2.5-Coder-32B-Instruct"}
+TEXT_MODELS = {"default": "command-r-plus", "fast": "command-r", "reasoning": "command-r-plus", "code": "command-r-plus"}
 
 
-class TogetherProvider(BaseProvider):
-    """TogetherProvider — OpenAI-compatible API."""
+class CohereProvider(BaseProvider):
+    """CohereProvider — OpenAI-compatible API."""
 
-    name: str = "together"
+    name: str = "cohere"
     supports_streaming: bool = False
 
     def __init__(self, api_key: str = "", timeout: float = 30.0):
@@ -22,7 +22,7 @@ class TogetherProvider(BaseProvider):
 
     async def init(self) -> None:
         self._client = httpx.AsyncClient(
-            base_url="https://api.together.xyz",
+            base_url="https://api.cohere.com",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -58,7 +58,7 @@ class TogetherProvider(BaseProvider):
         messages = self._build_messages(prompt, system_prompt, history)
         payload = {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens}
         try:
-            response = await self._client.post("/v1/chat/completions", json=payload)
+            response = await self._client.post("/compatibility/v1/chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()
             choice = data["choices"][0]

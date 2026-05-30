@@ -31,13 +31,19 @@ class AIRouter:
 
     async def init(self) -> None:
         """Initialize all available providers."""
-        available_keys = get_provider_keys()
+        from bot.config import (
+            GROQ_API_KEY, OPENROUTER_API_KEY, GITHUB_TOKEN,
+            GEMINI_API_KEY, HF_TOKEN, CEREBRAS_API_KEY, GROK_API_KEY,
+            SAMBAOVA_API_KEY, CHUTES_API_KEY, TOGETHER_API_KEY,
+            MISTRAL_API_KEY, FIREWORKS_API_KEY, CF_API_TOKEN,
+            CF_ACCOUNT_ID, BLACKBOX_API_KEY, COHERE_API_KEY,
+        )
 
         for name, provider_cls in ALL_PROVIDERS.items():
             try:
+                # ── Existing providers ──
                 if name.startswith("huggingface"):
                     sub_type = name.replace("huggingface", "").lstrip("_") or "text"
-                    from bot.config import HF_TOKEN
                     provider = provider_cls(
                         api_key=HF_TOKEN,
                         sub_type=sub_type,
@@ -45,32 +51,27 @@ class AIRouter:
                     )
                     provider.name = name
                 elif name == "groq_whisper":
-                    from bot.config import GROQ_API_KEY
                     provider = provider_cls(
                         api_key=GROQ_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("audio_stt", 30.0),
                     )
                     provider.name = name
                 elif name == "groq":
-                    from bot.config import GROQ_API_KEY
                     provider = provider_cls(
                         api_key=GROQ_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
                     )
                 elif name == "openrouter":
-                    from bot.config import OPENROUTER_API_KEY
                     provider = provider_cls(
                         api_key=OPENROUTER_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
                     )
                 elif name == "github_models":
-                    from bot.config import GITHUB_TOKEN
                     provider = provider_cls(
                         api_key=GITHUB_TOKEN,
                         timeout=PROVIDER_TIMEOUTS.get("code", 20.0),
                     )
                 elif name == "gemini":
-                    from bot.config import GEMINI_API_KEY
                     provider = provider_cls(
                         api_key=GEMINI_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
@@ -80,15 +81,55 @@ class AIRouter:
                 elif name == "prodia":
                     provider = provider_cls(timeout=PROVIDER_TIMEOUTS.get("image", 45.0))
                 elif name == "cerebras":
-                    from bot.config import CEREBRAS_API_KEY
                     provider = provider_cls(
                         api_key=CEREBRAS_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
                     )
                 elif name == "grok":
-                    from bot.config import GROK_API_KEY
                     provider = provider_cls(
                         api_key=GROK_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                # ── New providers ──
+                elif name == "sambanova":
+                    provider = provider_cls(
+                        api_key=SAMBAOVA_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "chutes":
+                    provider = provider_cls(
+                        api_key=CHUTES_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "together":
+                    provider = provider_cls(
+                        api_key=TOGETHER_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "mistral":
+                    provider = provider_cls(
+                        api_key=MISTRAL_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "fireworks":
+                    provider = provider_cls(
+                        api_key=FIREWORKS_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                    )
+                elif name == "cloudflare":
+                    provider = provider_cls(
+                        api_key=CF_API_TOKEN,
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
+                        account_id=CF_ACCOUNT_ID,
+                    )
+                elif name == "blackbox":
+                    provider = provider_cls(
+                        api_key=BLACKBOX_API_KEY,
+                        timeout=PROVIDER_TIMEOUTS.get("code", 30.0),
+                    )
+                elif name == "cohere":
+                    provider = provider_cls(
+                        api_key=COHERE_API_KEY,
                         timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
                     )
                 else:

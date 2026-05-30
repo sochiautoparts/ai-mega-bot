@@ -73,16 +73,41 @@ PLANS: Dict[str, Plan] = {
 }
 
 # ── AI Provider Priority Chains ──────────────────────────────
-# OpenRouter has free models with the user's key — fast and reliable
-# Groq is fast with the user's key — great for text and code
-# Pollinations is FREE and always available (no key needed) — ultimate fallback
+# Priority: fastest/most reliable first, free fallbacks last
+# Chutes = unlimited free (always available)
+# Pollinations = free, no key (ultimate fallback)
+# Groq = very fast with key
+# SambaNova = ultra-fast with key
+# Cerebras = fast with key
+# OpenRouter = many models with key
+# Mistral = proprietary models with key
+# Together = 200+ models with key
+# Fireworks = fast with key
+# Blackbox = free code AI (no key needed)
+# Cloudflare = edge inference with key
+# Cohere = Command R+ with key
 PROVIDER_CHAINS: Dict[str, List[str]] = {
-    "text": ["openrouter", "groq", "cerebras", "pollinations", "github_models", "gemini", "huggingface"],
+    "text": [
+        "groq", "sambanova", "cerebras", "openrouter",
+        "together", "mistral", "fireworks",
+        "chutes", "pollinations", "blackbox",
+        "github_models", "gemini", "cloudflare", "cohere", "huggingface",
+    ],
     "image": ["pollinations", "prodia", "huggingface_img"],
     "audio_stt": ["groq_whisper", "huggingface_whisper"],
     "audio_tts": ["huggingface_tts"],
-    "translate": ["openrouter", "groq", "cerebras", "pollinations", "gemini", "huggingface_nllb"],
-    "code": ["openrouter", "groq", "cerebras", "pollinations", "github_models"],
+    "translate": [
+        "groq", "sambanova", "cerebras", "openrouter",
+        "mistral", "together", "fireworks",
+        "chutes", "pollinations", "blackbox",
+        "gemini", "cloudflare", "cohere", "huggingface_nllb",
+    ],
+    "code": [
+        "groq", "sambanova", "cerebras", "openrouter",
+        "together", "mistral", "fireworks",
+        "chutes", "pollinations", "blackbox",
+        "github_models", "cloudflare", "cohere",
+    ],
 }
 
 # ── Provider Timeouts (seconds) ─────────────────────────────
@@ -149,6 +174,17 @@ HF_TOKEN: str = _env("HF_TOKEN")
 CEREBRAS_API_KEY: str = _env("CEREBRAS_API_KEY")
 GROK_API_KEY: str = _env("GROK_API_KEY")
 
+# ── New Provider API Keys ────────────────────────────────────
+SAMBAOVA_API_KEY: str = _env("SAMBAOVA_API_KEY")
+CHUTES_API_KEY: str = _env("CHUTES_API_KEY")          # Optional — Chutes works without key
+TOGETHER_API_KEY: str = _env("TOGETHER_API_KEY")
+MISTRAL_API_KEY: str = _env("MISTRAL_API_KEY")
+FIREWORKS_API_KEY: str = _env("FIREWORKS_API_KEY")
+CF_API_TOKEN: str = _env("CF_API_TOKEN")              # Cloudflare API Token
+CF_ACCOUNT_ID: str = _env("CF_ACCOUNT_ID")            # Cloudflare Account ID
+BLACKBOX_API_KEY: str = _env("BLACKBOX_API_KEY")      # Optional — Blackbox works without key
+COHERE_API_KEY: str = _env("COHERE_API_KEY")
+
 # ── GitHub (for Actions, keep-alive, data sync) ─────────────
 GH_PAT_TOKEN: str = _env("GH_PAT_TOKEN")
 GH_REPO: str = _env("GH_REPO", "sochiautoparts/ai-mega-bot")
@@ -177,6 +213,7 @@ def validate_config() -> List[str]:
 def get_provider_keys() -> Dict[str, bool]:
     """Check which AI providers have keys configured."""
     return {
+        # ── Existing providers ──
         "groq": bool(GROQ_API_KEY),
         "openrouter": bool(OPENROUTER_API_KEY),
         "github_models": bool(GITHUB_TOKEN),
@@ -191,4 +228,13 @@ def get_provider_keys() -> Dict[str, bool]:
         "groq_whisper": bool(GROQ_API_KEY),
         "cerebras": bool(CEREBRAS_API_KEY),
         "grok": bool(GROK_API_KEY),
+        # ── New providers ──
+        "sambanova": bool(SAMBAOVA_API_KEY),
+        "chutes": True,        # Works without key — ALWAYS available
+        "together": bool(TOGETHER_API_KEY),
+        "mistral": bool(MISTRAL_API_KEY),
+        "fireworks": bool(FIREWORKS_API_KEY),
+        "cloudflare": bool(CF_API_TOKEN and CF_ACCOUNT_ID),
+        "blackbox": True,      # Works without key — ALWAYS available
+        "cohere": bool(COHERE_API_KEY),
     }
