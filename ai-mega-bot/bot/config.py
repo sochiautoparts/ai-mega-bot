@@ -136,6 +136,9 @@ SESSION_DURATION_SECONDS = 20700  # 5h 45m = 345 min
 def _env(name: str, default: str = "") -> str:
     """Get environment variable or raise error for required ones."""
     val = os.environ.get(name, default)
+    # Treat "not_configured" as empty — used as placeholder for unconfigured secrets
+    if val in ("not_configured", "placeholder", "NONE", "null"):
+        val = ""
     if not val and not default:
         # For optional vars, return empty; required vars checked at startup
         pass
