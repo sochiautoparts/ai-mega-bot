@@ -75,6 +75,10 @@ async def cmd_code(message: Message, db=None, ai_router=None) -> None:
     # Show typing indicator
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
+    # Get chat history for code context
+    tier_obj = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+    history = await db.get_chat_history(user_id, limit=10, max_age_days=1)
+
     try:
         result = await ai_router.route(
             task_type="code",
@@ -82,6 +86,8 @@ async def cmd_code(message: Message, db=None, ai_router=None) -> None:
             user_id=user_id,
             tier=tier,
             system_prompt=CODE_SYSTEM_PROMPT,
+            history=history,
+            skip_cache=True,
         )
 
         # Record usage

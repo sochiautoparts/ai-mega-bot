@@ -3,6 +3,7 @@ AI Mega Bot — Chat Handler.
 
 Routes plain text messages to AI as "text" task.
 Manages chat history and daily limits.
+Supports conversation context (memory).
 """
 import logging
 
@@ -20,17 +21,14 @@ router = Router()
 @router.message(Command("clear"))
 async def cmd_clear(message: Message, db=None) -> None:
     """Clear chat history."""
-    # db is injected from workflow_data
     if db:
         await db.clear_chat_history(message.from_user.id)
-    await message.answer("🗑 История чата очищена!")
+    await message.answer("🗑 История чата очищена! Теперь я начну диалог заново.")
 
 
 @router.message(F.text, ~F.text.startswith("/"))
 async def handle_chat(message: Message, db=None, ai_router=None) -> None:
-    """Handle any text message (non-command) as AI chat."""
-    # db and ai_router are injected from workflow_data
-
+    """Handle any text message (non-command) as AI chat with context memory."""
     if not db or not ai_router:
         await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")
         return
@@ -66,33 +64,36 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
     # Show typing indicator
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
-    # Get chat history
-    history = []
-    if limits.history_days > 0:
-        history = await db.get_chat_history(
-            user_id,
-            limit=20,
-            max_age_days=limits.history_days,
-        )
+    # Save user message FIRST (so it's in history)
+    await db.add_chat_message(user_id, "user", text)
+
+    # Get chat history (includes the message we just saved)
+    # All users get context memory: Pro/Ultra get full history, Free gets session (1 hour)
+    history = await db.get_chat_history(
+        user_id,
+        limit=30 if limits.history_days > 0 else 10,
+        max_age_days=limits.history_days if limits.history_days > 0 else 0,
+    )
 
     # Build system prompt for context
     system_prompt = (
         "Ты — AI Mega Bot, дружелюбный и умный AI-ассистент. "
         "Отвечай на том языке, на котором задаёт вопрос пользователь. "
-        "Будь полезным, точным и лаконичным."
+        "Будь полезным, точным и лаконичным. "
+        "Помни контекст предыдущих сообщений в этом разговоре. "
+        "Если пользователь ссылается на что-то из предыдущих сообщений, используй этот контекст."
     )
 
-    # Save user message
-    await db.add_chat_message(user_id, "user", text)
-
     try:
-        # Route to AI
+        # Route to AI with conversation history
         result = await ai_router.route(
             task_type="text",
             prompt=text,
             user_id=user_id,
             tier=tier,
             system_prompt=system_prompt,
+            history=history,  # <-- KEY FIX: pass history for context
+            skip_cache=True,  # Never cache chat — context changes each time
         )
 
         # Record usage
@@ -100,7 +101,7 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
             user_id, "text", result.provider, tokens=result.tokens_used
         )
 
-        # Save assistant message
+        # Save assistant message to history
         response_text = result.text or "⚠️ Пустой ответ от AI."
         await db.add_chat_message(
             user_id, "assistant", response_text, tokens=result.tokens_used
@@ -108,7 +109,6 @@ async def handle_chat(message: Message, db=None, ai_router=None) -> None:
 
         # Send response (truncate if too long for Telegram)
         if len(response_text) > 4096:
-            # Split long messages
             for i in range(0, len(response_text), 4096):
                 chunk = response_text[i:i + 4096]
                 await message.answer(chunk)

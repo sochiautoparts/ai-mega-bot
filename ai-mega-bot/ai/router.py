@@ -61,7 +61,7 @@ class AIRouter:
                     from bot.config import OPENROUTER_API_KEY
                     provider = provider_cls(
                         api_key=OPENROUTER_API_KEY,
-                        timeout=PROVIDER_TIMEOUTS.get("text", 15.0),
+                        timeout=PROVIDER_TIMEOUTS.get("text", 30.0),
                     )
                 elif name == "github_models":
                     from bot.config import GITHUB_TOKEN
@@ -109,6 +109,8 @@ class AIRouter:
             self._chains[task_type] = [p for p in chain if p in self.providers]
             if not self._chains[task_type]:
                 logger.warning(f"No providers available for task: {task_type}")
+            else:
+                logger.info(f"Provider chain for {task_type}: {self._chains[task_type]}")
 
     async def close(self) -> None:
         """Shutdown all providers."""
@@ -127,20 +129,22 @@ class AIRouter:
         **kwargs,
     ) -> AIResponse:
         """Route a request to the best available provider."""
-        # Check cache first
-        cached = await self.cache.get(prompt, task_type, **kwargs)
-        if cached:
-            return AIResponse(
-                text=cached.get("text", ""),
-                image_url=cached.get("image_url", ""),
-                image_bytes=cached.get("image_bytes", b"")
-                if isinstance(cached.get("image_bytes"), bytes)
-                else b"",
-                provider=cached.get("provider", "cache"),
-                model=cached.get("model", ""),
-                tokens_used=0,
-                metadata={"from_cache": True},
-            )
+        # Check cache first (unless skip_cache is set)
+        skip_cache = kwargs.get("skip_cache", False)
+        if not skip_cache:
+            cached = await self.cache.get(prompt, task_type, **kwargs)
+            if cached:
+                return AIResponse(
+                    text=cached.get("text", ""),
+                    image_url=cached.get("image_url", ""),
+                    image_bytes=cached.get("image_bytes", b"")
+                    if isinstance(cached.get("image_bytes"), bytes)
+                    else b"",
+                    provider=cached.get("provider", "cache"),
+                    model=cached.get("model", ""),
+                    tokens_used=0,
+                    metadata={"from_cache": True},
+                )
 
         chain = self._chains.get(task_type, [])
         if not chain:
@@ -166,10 +170,11 @@ class AIRouter:
                 elif task_type == "audio_tts":
                     result = await provider.text_to_speech(prompt, **kwargs)
                 elif task_type == "translate":
-                    # Pop source_lang/target_lang from kwargs to avoid double-passing
                     _kw = dict(kwargs)
                     src = _kw.pop("source_lang", "auto")
                     tgt = _kw.pop("target_lang", "ru")
+                    _kw.pop("history", None)  # Not needed for translate
+                    _kw.pop("skip_cache", None)
                     result = await provider.translate(
                         prompt,
                         source_lang=src,
@@ -177,7 +182,7 @@ class AIRouter:
                         **_kw,
                     )
                 else:
-                    # text, code
+                    # text, code — pass history for context
                     result = await provider.generate(prompt, **kwargs)
 
                 # Validate result has content
@@ -191,14 +196,15 @@ class AIRouter:
                     provider_name, user_id, task_type, result.tokens_used
                 )
 
-                # Cache the result
-                cache_data = {
-                    "text": result.text,
-                    "image_url": result.image_url,
-                    "provider": result.provider,
-                    "model": result.model,
-                }
-                await self.cache.put(prompt, task_type, cache_data, **kwargs)
+                # Cache the result (only if not skip_cache)
+                if not skip_cache:
+                    cache_data = {
+                        "text": result.text,
+                        "image_url": result.image_url,
+                        "provider": result.provider,
+                        "model": result.model,
+                    }
+                    await self.cache.put(prompt, task_type, cache_data, **kwargs)
 
                 return result
 

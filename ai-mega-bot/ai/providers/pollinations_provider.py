@@ -5,11 +5,12 @@ Supports:
   - Image generation via GET request (returns image bytes)
   - Translation via text generation with system prompt
   - Code assistance via text generation with system prompt
+  - Conversation context (history) for multi-turn chat
 
 Pollinations is the ultimate fallback — always available, no key, no limits.
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 
 import httpx
@@ -62,8 +63,41 @@ class PollinationsProvider(BaseProvider):
         """Pollinations is always available — no key needed."""
         return True
 
+    def _build_messages(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, str]]:
+        """Build messages array with system prompt, history, and current prompt."""
+        messages: List[Dict[str, str]] = []
+
+        # System prompt first
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        # Add conversation history for context memory
+        if history:
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+
+        # Current user message (if not already in history)
+        last_is_current = (
+            history
+            and len(history) > 0
+            and history[-1].get("role") == "user"
+            and history[-1].get("content") == prompt
+        )
+        if not last_is_current:
+            messages.append({"role": "user", "content": prompt})
+
+        return messages
+
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Pollinations OpenAI-compatible POST API."""
+        """Generate text via Pollinations OpenAI-compatible POST API with context."""
         if not self._client:
             await self.init()
 
@@ -72,12 +106,10 @@ class PollinationsProvider(BaseProvider):
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
+        history: Optional[List[Dict[str, str]]] = kwargs.get("history")
 
-        # Use POST endpoint (OpenAI-compatible) for better results
-        messages: List[Dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        # Build messages with conversation history
+        messages = self._build_messages(prompt, system_prompt, history)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -107,7 +139,10 @@ class PollinationsProvider(BaseProvider):
                 provider=self.name,
                 model=f"pollinations:{model}",
                 tokens_used=0,  # Pollinations doesn't report tokens
-                metadata={"endpoint": "text_post"},
+                metadata={
+                    "endpoint": "text_post",
+                    "context_messages": len(messages),
+                },
             )
 
         except httpx.TimeoutException as exc:
@@ -223,4 +258,5 @@ class PollinationsProvider(BaseProvider):
                 f"Maintain the original tone and style."
             )
 
+        # Translation doesn't use history — always fresh context
         return await self.generate(text, system_prompt=system_prompt, model_key="default")

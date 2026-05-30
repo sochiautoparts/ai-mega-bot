@@ -1,10 +1,10 @@
-"""Grok (xAI) Provider — fast inference via OpenAI-compatible API.
+"""Grok (xAI) Provider — fast inference via OpenAI-compatible API with context.
 
 xAI's Grok models accessible at https://api.x.ai/v1/
 Uses the standard OpenAI chat completions format.
 """
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -23,7 +23,7 @@ TEXT_MODELS = {
 
 
 class GrokProvider(BaseProvider):
-    """Grok (xAI) provider using httpx for maximum performance."""
+    """Grok (xAI) provider using httpx with conversation context."""
 
     name: str = "grok"
     supports_streaming: bool = False
@@ -43,8 +43,33 @@ class GrokProvider(BaseProvider):
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
 
+    def _build_messages(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, str]]:
+        """Build messages array with context memory."""
+        messages: List[Dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if history:
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+        last_is_current = (
+            history and len(history) > 0
+            and history[-1].get("role") == "user"
+            and history[-1].get("content") == prompt
+        )
+        if not last_is_current:
+            messages.append({"role": "user", "content": prompt})
+        return messages
+
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via Grok chat completions."""
+        """Generate text via Grok chat completions with context."""
         if not self._client:
             await self.init()
 
@@ -53,11 +78,9 @@ class GrokProvider(BaseProvider):
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
+        history: Optional[List[Dict[str, str]]] = kwargs.get("history")
 
-        messages: List[Dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        messages = self._build_messages(prompt, system_prompt, history)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -86,6 +109,7 @@ class GrokProvider(BaseProvider):
                 metadata={
                     "prompt_tokens": usage.get("prompt_tokens", 0),
                     "completion_tokens": usage.get("completion_tokens", 0),
+                    "context_messages": len(messages),
                 },
             )
 

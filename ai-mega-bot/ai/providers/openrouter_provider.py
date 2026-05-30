@@ -1,4 +1,4 @@
-"""OpenRouter AI Provider — access to multiple free models."""
+"""OpenRouter AI Provider — access to multiple free models with conversation context."""
 import logging
 from typing import Any, Dict, List, Optional
 
@@ -37,12 +37,46 @@ class OpenRouterProvider(BaseProvider):
                 "HTTP-Referer": "https://github.com/sochiautoparts/ai-mega-bot",
                 "X-Title": "AI Mega Bot",
             },
-            timeout=httpx.Timeout(self.timeout, connect=5.0),
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            timeout=httpx.Timeout(self.timeout, connect=10.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
 
+    def _build_messages(
+        self,
+        prompt: str,
+        system_prompt: str = "",
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> List[Dict[str, str]]:
+        """Build messages array with system prompt, history, and current prompt."""
+        messages: List[Dict[str, str]] = []
+
+        # System prompt first
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        # Add conversation history for context memory
+        if history:
+            for msg in history:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                if role in ("user", "assistant") and content:
+                    messages.append({"role": role, "content": content})
+
+        # Current user message (if not already in history)
+        # Check if the last history entry is already this prompt
+        last_is_current = (
+            history
+            and len(history) > 0
+            and history[-1].get("role") == "user"
+            and history[-1].get("content") == prompt
+        )
+        if not last_is_current:
+            messages.append({"role": "user", "content": prompt})
+
+        return messages
+
     async def generate(self, prompt: str, **kwargs) -> AIResponse:
-        """Generate text via OpenRouter chat completions."""
+        """Generate text via OpenRouter chat completions with context memory."""
         if not self._client:
             await self.init()
 
@@ -51,11 +85,9 @@ class OpenRouterProvider(BaseProvider):
         system_prompt: str = kwargs.get("system_prompt", "")
         temperature: float = kwargs.get("temperature", 0.7)
         max_tokens: int = kwargs.get("max_tokens", 4096)
+        history: Optional[List[Dict[str, str]]] = kwargs.get("history")
 
-        messages: List[Dict[str, str]] = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        messages = self._build_messages(prompt, system_prompt, history)
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -84,6 +116,7 @@ class OpenRouterProvider(BaseProvider):
                 metadata={
                     "prompt_tokens": usage.get("prompt_tokens", 0),
                     "completion_tokens": usage.get("completion_tokens", 0),
+                    "context_messages": len(messages),
                 },
             )
 

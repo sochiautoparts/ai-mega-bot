@@ -403,8 +403,12 @@ class Database:
     async def get_chat_history(
         self, user_id: int, limit: int = 20, max_age_days: int = 30
     ) -> List[Dict[str, str]]:
-        """Get chat history for a user."""
-        cutoff = time.time() - (max_age_days * 86400)
+        """Get chat history for a user. max_age_days=0 means current session only (1 hour)."""
+        if max_age_days <= 0:
+            # Current session only: last 1 hour
+            cutoff = time.time() - 3600
+        else:
+            cutoff = time.time() - (max_age_days * 86400)
         messages = []
         async with self._db.execute(
             """SELECT role, content FROM chat_history
