@@ -15,9 +15,12 @@ logger = logging.getLogger(__name__)
 
 TEXT_MODELS = {
     "default": "Meta-Llama-3.3-70B-Instruct",
-    "fast": "Meta-Llama-3.1-8B-Instruct",
+    "fast": "gemma-3-12b-it",
     "reasoning": "DeepSeek-V3.1",
-    "code": "Meta-Llama-3.3-70B-Instruct",
+    "code": "Llama-4-Maverick-17B-128E-Instruct",
+    "maverick": "Llama-4-Maverick-17B-128E-Instruct",
+    "gemma4": "gemma-4-31B-it",
+    "deepseek": "DeepSeek-V3.2",
 }
 
 
