@@ -290,12 +290,19 @@ async def chat(
 
     if fast:
         # Ultra-fast path: for short prompts without heavy context, use GET
-        # endpoint (~3-6s). For longer prompts (events with research context),
+        # endpoint (~0.6-6s). For longer prompts (events with research context),
         # use POST. Both are Pollinations direct (no key, anonymous).
         use_get = (not extra_context) and (not dialog_history) and len(prompt) < 400
         if use_get:
-            # Embed system instructions into the prompt for GET (no system role)
-            embedded = f"{system}\n\nВопрос: {prompt}\n\nВасилий (кратко, живо, по-русски):" if system else prompt
+            # GET has no system role — embed a SHORT persona instruction.
+            # Using the full system prompt would make the URL too long.
+            # The short instruction preserves gender + tone + brevity.
+            short_persona = (
+                "Ты Василий, парень из Сочи. Мужской род всегда. "
+                "Отвечай живо, кратко (1-3 предложения), как знакомый в переписке. "
+                "По-русски. Без выдуманных фактов."
+            )
+            embedded = f"{short_persona}\n\nВопрос: {prompt}\n\nВасилий:"
             out = await _call_pollinations_get(embedded, timeout=12.0)
             if out:
                 _stats["success"] += 1
