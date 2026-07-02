@@ -204,7 +204,7 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
         # News/event → DEEP research: multiple queries + article content fetch
         try:
             web_context = await asyncio.wait_for(
-                research_topic(text[:400], max_queries=2), timeout=20.0
+                research_topic(text[:400], max_queries=2), timeout=12.0
             )
             if web_context:
                 extra_ctx += "\n\n" + web_context
@@ -262,17 +262,20 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
     # if AI fails. Non-directed: skip reply if AI silent (avoid robotic spam),
     # but still set a reaction so the bot visibly engaged.
     fallback = directed
+    # Fast path for regular non-directed group comments: Pollinations direct
+    # FIRST (~1-3s), OpenClaw backup. Directed/event use OpenClaw first (quality).
+    use_fast = (not directed) and (not is_event)
     try:
         out = await asyncio.wait_for(
             ai_client.chat(
                 prompt, system=system, extra_context=extra_ctx,
                 dialog_history=dialog_history, max_tokens=max_tokens, temperature=0.95,
-                allow_static_fallback=fallback,
+                allow_static_fallback=fallback, fast=use_fast,
             ),
-            timeout=50.0,
+            timeout=45.0,
         )
     except asyncio.TimeoutError:
-        logger.warning(f"GROUP AI timeout (50s) chat={message.chat.id}")
+        logger.warning(f"GROUP AI timeout (45s) chat={message.chat.id}")
         return ""
 
     out = (out or "").strip()

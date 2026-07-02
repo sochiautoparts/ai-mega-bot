@@ -31,7 +31,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://text.pollinations.ai/openai",
         "api": "openai-completions",
         "apiKey": "pollinations",  # literal — no real key needed
-        "timeoutSeconds": 45,
+        "timeoutSeconds": 12,
         "always": True,
         "models": [
             {"id": "openai", "name": "Pollinations GPT-OSS 20B (free, no key)"},
@@ -42,7 +42,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://api.groq.com/openai/v1",
         "api": "openai-completions",
         "env": "GROQ_API_KEY",
-        "timeoutSeconds": 40,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "llama-3.3-70b-versatile", "name": "Groq Llama 3.3 70B"},
             {"id": "llama-3.1-8b-instant", "name": "Groq Llama 3.1 8B (fast)"},
@@ -53,7 +53,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
         "api": "openai-completions",
         "env": "GEMINI_API_KEY",
-        "timeoutSeconds": 40,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "gemini-2.0-flash", "name": "Google Gemini 2.0 Flash"},
             {"id": "gemini-1.5-flash", "name": "Google Gemini 1.5 Flash"},
@@ -64,7 +64,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://openrouter.ai/api/v1",
         "api": "openai-completions",
         "env": "OPENROUTER_API_KEY",
-        "timeoutSeconds": 45,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "meta-llama/llama-3.3-70b-instruct:free", "name": "OpenRouter Llama 3.3 70B (free)"},
             {"id": "google/gemma-2-9b-it:free", "name": "OpenRouter Gemma 2 9B (free)"},
@@ -75,7 +75,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://router.huggingface.co/v1",
         "api": "openai-completions",
         "env": "HF_TOKEN",
-        "timeoutSeconds": 45,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "qwen2.5-7b-instruct", "name": "HF Qwen2.5 7B Instruct"},
         ],
@@ -85,7 +85,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://api.cerebras.ai/v1",
         "api": "openai-completions",
         "env": "CEREBRAS_API_KEY",
-        "timeoutSeconds": 40,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "llama-3.3-70b", "name": "Cerebras Llama 3.3 70B"},
         ],
@@ -95,7 +95,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://api.openai.com/v1",
         "api": "openai-completions",
         "env": "OPENAI_API_KEY",
-        "timeoutSeconds": 40,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "gpt-4o-mini", "name": "OpenAI GPT-4o mini"},
             {"id": "gpt-4o", "name": "OpenAI GPT-4o"},
@@ -106,7 +106,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://api.anthropic.com/v1",
         "api": "anthropic-messages",
         "env": "ANTHROPIC_API_KEY",
-        "timeoutSeconds": 40,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "claude-3-5-sonnet-latest", "name": "Anthropic Claude 3.5 Sonnet"},
         ],
@@ -116,7 +116,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://api.x.ai/v1",
         "api": "openai-completions",
         "env": "XAI_API_KEY",
-        "timeoutSeconds": 40,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "grok-beta", "name": "xAI Grok Beta"},
         ],
@@ -126,7 +126,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://api.mistral.ai/v1",
         "api": "openai-completions",
         "env": "MISTRAL_API_KEY",
-        "timeoutSeconds": 40,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "mistral-small-latest", "name": "Mistral Small"},
         ],
@@ -136,7 +136,7 @@ PROVIDERS: list[dict] = [
         "baseUrl": "https://api.sambanova.ai/v1",
         "api": "openai-completions",
         "env": "SAMBANOVA_API_KEY",
-        "timeoutSeconds": 45,
+        "timeoutSeconds": 12,
         "models": [
             {"id": "Meta-Llama-3.1-8B-Instruct", "name": "SambaNova Llama 3.1 8B"},
         ],
