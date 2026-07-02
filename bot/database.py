@@ -4,11 +4,15 @@ SQLite storage for AI Mega Bot — async (aiosqlite), WAL mode for concurrency.
 Tables:
   channels          — known channels + enabled flag (reactions on/off)
   group_messages    — recent message context window per group (FIFO)
-  group_memory      — long-term facts about users per group
+  group_memory      — per-group facts about users
+  users             — GLOBAL user profiles (name, seen, counts) — survives restarts
+  user_facts        — GLOBAL facts about users across ALL chats (private + groups)
+  private_messages  — persistent private chat history (survives restarts)
   reactions_dedup   — recent message_ids we reacted to (anti-duplicate)
 
 The DB file lives at config.DB_PATH (data/bot.db). In GitHub Actions it is
-cached across runs + committed to git for memory persistence.
+cached across runs + committed to git for memory persistence — so Василий
+remembers people and conversations across restarts.
 """
 
 import logging
@@ -53,6 +57,37 @@ CREATE TABLE IF NOT EXISTS group_memory (
 );
 CREATE INDEX IF NOT EXISTS idx_gmem_chat ON group_memory(chat_id, id DESC);
 CREATE INDEX IF NOT EXISTS idx_gmem_chat_user ON group_memory(chat_id, user_id);
+
+CREATE TABLE IF NOT EXISTS users (
+    user_id      INTEGER PRIMARY KEY,
+    username     TEXT DEFAULT '',
+    first_name   TEXT DEFAULT '',
+    last_name    TEXT DEFAULT '',
+    is_bot       INTEGER DEFAULT 0,
+    first_seen   INTEGER NOT NULL,
+    last_seen    INTEGER NOT NULL,
+    msg_count    INTEGER DEFAULT 0,
+    private_msgs INTEGER DEFAULT 0,
+    group_msgs   INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS user_facts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    fact        TEXT NOT NULL,
+    source_chat INTEGER NOT NULL,
+    ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_uf_user ON user_facts(user_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS private_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    role        TEXT NOT NULL,   -- 'user' | 'assistant'
+    content     TEXT NOT NULL,
+    ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pm_user_ts ON private_messages(user_id, id DESC);
 
 CREATE TABLE IF NOT EXISTS reactions_dedup (
     message_id  INTEGER NOT NULL,
@@ -169,6 +204,107 @@ async def get_group_memory(chat_id: int, user_id: Optional[int] = None,
         )
     rows = await cur.fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Global user profiles ────────────────────────────────────────────────────
+async def upsert_user(user_id: int, username: str = "", first_name: str = "",
+                      last_name: str = "", is_bot: bool = False,
+                      in_private: bool = False, in_group: bool = False) -> None:
+    """Create or update a global user profile. Bumps message counters."""
+    now = int(time.time())
+    c = _conn()
+    await c.execute(
+        "INSERT INTO users(user_id, username, first_name, last_name, is_bot, "
+        "first_seen, last_seen, msg_count, private_msgs, group_msgs) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(user_id) DO UPDATE SET "
+        "username=excluded.username, first_name=excluded.first_name, "
+        "last_name=excluded.last_name, last_seen=excluded.last_seen, "
+        "msg_count=users.msg_count+1, "
+        "private_msgs=users.private_msgs+?, "
+        "group_msgs=users.group_msgs+?",
+        (user_id, username, first_name, last_name, int(is_bot),
+         now, now, 1, int(in_private), int(in_group),
+         int(in_private), int(in_group)),
+    )
+    await c.commit()
+
+
+async def get_user(user_id: int) -> Optional[dict]:
+    cur = await _conn().execute("SELECT * FROM users WHERE user_id=?", (user_id,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def add_user_fact(user_id: int, fact: str, source_chat: int = 0) -> None:
+    """Store a fact learned about a user (globally, across all chats)."""
+    await _conn().execute(
+        "INSERT INTO user_facts(user_id, fact, source_chat, ts) VALUES(?,?,?,?)",
+        (user_id, fact, source_chat, int(time.time())),
+    )
+    await _conn().commit()
+
+
+async def get_user_facts(user_id: int, limit: int = 12) -> List[dict]:
+    cur = await _conn().execute(
+        "SELECT fact FROM user_facts WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        (user_id, limit),
+    )
+    rows = await cur.fetchall()
+    return [dict(r) for r in rows]
+
+
+async def has_user_fact(user_id: int, fact: str) -> bool:
+    """Check if a similar fact already exists (substring match, case-insensitive)."""
+    cur = await _conn().execute(
+        "SELECT 1 FROM user_facts WHERE user_id=? AND LOWER(fact)=LOWER(?) LIMIT 1",
+        (user_id, fact),
+    )
+    return await cur.fetchone() is not None
+
+
+async def clear_user_facts(user_id: int) -> int:
+    """Delete all facts for a user. Returns number deleted."""
+    cur = await _conn().execute(
+        "DELETE FROM user_facts WHERE user_id=?", (user_id,)
+    )
+    await _conn().commit()
+    return cur.rowcount or 0
+
+
+# ── Private chat history (persistent) ───────────────────────────────────────
+async def add_private_message(user_id: int, role: str, content: str) -> None:
+    await _conn().execute(
+        "INSERT INTO private_messages(user_id, role, content, ts) VALUES(?,?,?,?)",
+        (user_id, role, content, int(time.time())),
+    )
+    await _conn().commit()
+    # Trim to last 40 turns per user (80 rows) to bound DB growth
+    await _conn().execute(
+        "DELETE FROM private_messages WHERE user_id=? AND id NOT IN "
+        "(SELECT id FROM private_messages WHERE user_id=? ORDER BY id DESC LIMIT 80)",
+        (user_id, user_id),
+    )
+    await _conn().commit()
+
+
+async def get_private_history(user_id: int, limit: int = 16) -> List[dict]:
+    """Returns chronological list of {role, content} for a user."""
+    cur = await _conn().execute(
+        "SELECT role, content FROM private_messages WHERE user_id=? "
+        "ORDER BY id DESC LIMIT ?",
+        (user_id, limit),
+    )
+    rows = await cur.fetchall()
+    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+
+
+async def clear_private_history(user_id: int) -> int:
+    cur = await _conn().execute(
+        "DELETE FROM private_messages WHERE user_id=?", (user_id,)
+    )
+    await _conn().commit()
+    return cur.rowcount or 0
 
 
 # ── Reaction dedup ───────────────────────────────────────────────────────────

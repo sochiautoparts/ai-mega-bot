@@ -154,7 +154,7 @@ def format_search_results(results: List[SearchResult], max_items: int = 3) -> st
 
 
 async def verify_claim(claim: str, fast: bool = True) -> str:
-    """Verify/supplement a claim via web search. Returns formatted context."""
+    """Quick verify/supplement a claim via web search (5s). Returns formatted context."""
     timeout = 5.0 if fast else config.SEARCH_TIMEOUT_SECONDS
     try:
         results = await asyncio.wait_for(web_search(claim, max_results=3), timeout=timeout)
@@ -165,7 +165,111 @@ async def verify_claim(claim: str, fast: bool = True) -> str:
     return format_search_results(results, max_items=2)
 
 
+async def fetch_article(url: str, max_chars: int = 1500) -> str:
+    """Fetch a URL and extract its main text content (best-effort).
+
+    Returns up to max_chars of cleaned text. Used to give Василий detailed
+    context for supplementing news/events — not just the search snippet.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            r = await client.get(url, headers=_HEADERS)
+        if r.status_code != 200:
+            return ""
+        html = r.text
+        # Remove scripts/styles/nav
+        html = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r"<style[^>]*>.*?</style>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r"<nav[^>]*>.*?</nav>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r"<footer[^>]*>.*?</footer>", "", html, flags=re.DOTALL | re.IGNORECASE)
+        # Prefer <article> / <main> / <p> content
+        article = re.search(r"<article[^>]*>(.*?)</article>", html, re.DOTALL | re.IGNORECASE)
+        if article:
+            html = article.group(1)
+        else:
+            main = re.search(r"<main[^>]*>(.*?)</main>", html, re.DOTALL | re.IGNORECASE)
+            if main:
+                html = main.group(1)
+        # Extract paragraph text
+        paras = re.findall(r"<p[^>]*>(.*?)</p>", html, re.DOTALL | re.IGNORECASE)
+        if not paras:
+            paras = [html]
+        text = "\n".join(_clean_html(p) for p in paras)
+        text = re.sub(r"\s+", " ", text).strip()
+        # Filter out very short / nav-like fragments
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.strip()) > 30]
+        out = " ".join(sentences)
+        return out[:max_chars]
+    except Exception as e:
+        logger.debug(f"fetch_article error ({url}): {e}")
+        return ""
+
+
+async def research_topic(topic: str, max_queries: int = 2) -> str:
+    """Deep research a news/event topic for detailed supplementation.
+
+    Strategy:
+      1. Run up to max_queries search variations (original + simplified).
+      2. From combined results, fetch the top 2 articles' full content.
+      3. Return a rich context block: titles + snippets + article excerpts + URLs.
+
+    This is what powers Василий's "развёрнуто дополнять события и новости".
+    Timeout: ~20s total (2 searches + 2 article fetches, concurrent).
+    """
+    topic = (topic or "").strip()
+    if len(topic) < 5:
+        return ""
+
+    # Build query variations: original + a shortened version (first ~60 chars)
+    queries = [topic[:300]]
+    short = topic[:60].split("—")[0].split(":")[0].strip()
+    if short and short.lower() != topic[:60].lower():
+        queries.append(short)
+
+    # Run searches concurrently
+    async def _q(q: str) -> List[SearchResult]:
+        try:
+            return await asyncio.wait_for(web_search(q, max_results=5), timeout=8.0)
+        except (asyncio.TimeoutError, Exception):
+            return []
+
+    search_results_lists = await asyncio.gather(*[_q(q) for q in queries[:max_queries]])
+    # Flatten + dedup by URL
+    seen = set()
+    all_results: List[SearchResult] = []
+    for lst in search_results_lists:
+        for r in lst:
+            if r.url not in seen:
+                seen.add(r.url)
+                all_results.append(r)
+    if not all_results:
+        return ""
+
+    # Fetch top 2 articles' full content (concurrent, 8s each)
+    top = all_results[:2]
+    articles = await asyncio.gather(*[fetch_article(r.url, max_chars=1200) for r in top])
+
+    # Assemble rich context
+    lines = [f"Развёрнутые результаты веб-поиска по теме «{topic[:80]}»:"]
+    for i, r in enumerate(all_results[:4]):
+        snippet = f" — {r.snippet}" if r.snippet else ""
+        lines.append(f"\n[{i+1}] {r.title}{snippet}\n    {r.url}")
+    for i, (r, content) in enumerate(zip(top, articles)):
+        if content:
+            lines.append(f"\nСодержание статьи [{i+1}] ({r.title[:60]}):\n{content}")
+    lines.append(
+        "\nИспользуй эти данные чтобы РАЗВЁРНУТО дополнить ответ: приведи "
+        "конкретные факты, цифры, даты, контекст. Упомяни источник ссылкой."
+    )
+    return "\n".join(lines)
+
+
 def first_url(context: str) -> str:
     """Extract the first URL from a web-search context string."""
     m = re.search(r"https?://\S+", context or "")
     return m.group(0) if m else ""
+
+
+def all_urls(context: str) -> list:
+    """Extract all URLs from a web-search context string."""
+    return re.findall(r"https?://\S+", context or "")

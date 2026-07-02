@@ -37,11 +37,12 @@ from bot import database as db
 from bot.context import (
     user_descriptor, chat_descriptor, is_directed_at_bot,
     strip_mention, recent_messages_to_text, build_group_context,
+    build_user_profile, extract_and_store_facts,
 )
 from bot.mood import update_mood_from_message, current_mood_descriptor
 from bot.reactions import maybe_react
 from bot.safe_send import safe_reply
-from bot.web_search import verify_claim, first_url
+from bot.web_search import verify_claim, research_topic, first_url, all_urls
 from bot.media_handler import extract_caption
 from ai import client as ai_client
 from bot.persona import COMMENT_PROMPT, EVENT_PROMPT, DIRECT_PROMPT
@@ -179,24 +180,50 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
     memory_facts_rows = await db.get_group_memory(message.chat.id, limit=8)
     memory_facts = [r["fact"] for r in memory_facts_rows]
 
-    mood = await current_mood_descriptor()
-    extra_ctx = build_group_context(message, recent_text, memory_facts)
+    # ── Author profile: who is writing? (global user knowledge) ──
+    author_profile = ""
+    u = message.from_user
+    if u and not u.is_bot and u.id != config.BOT_ID:
+        try:
+            await db.upsert_user(u.id, username=u.username or "", first_name=u.first_name or "",
+                                 last_name=u.last_name or "", is_bot=u.is_bot, in_group=True)
+            author_profile = await build_user_profile(u.id)
+        except Exception as e:
+            logger.debug(f"author profile error: {e}")
 
-    # ── Web search: supplement news/events/facts with real info ──
+    mood = await current_mood_descriptor()
+    extra_ctx = build_group_context(message, recent_text, memory_facts, author_profile)
+
+    # ── Web research: supplement news/events with DETAILED info ──
     is_event = _is_event_or_news(text)
     needs_verify = _needs_verification(text)
     web_context = ""
-    if is_event or (needs_verify and random.random() < config.WEB_VERIFY_PROB):
+    web_urls: list = []
+    if is_event:
+        # News/event → DEEP research: multiple queries + article content fetch
         try:
-            web_context = await asyncio.wait_for(verify_claim(text[:400]), timeout=5.0)
+            web_context = await asyncio.wait_for(
+                research_topic(text[:400], max_queries=2), timeout=20.0
+            )
+            if web_context:
+                extra_ctx += "\n\n" + web_context
+                web_urls = all_urls(web_context)
+                logger.info(f"GROUP RESEARCH (event) found {len(web_context)} chars, {len(web_urls)} urls")
+        except (asyncio.TimeoutError, Exception) as e:
+            logger.debug(f"research_topic failed: {e}")
+    elif needs_verify and random.random() < config.WEB_VERIFY_PROB:
+        # Fact claim → quick verify (5s)
+        try:
+            web_context = await asyncio.wait_for(verify_claim(text[:400]), timeout=6.0)
             if web_context:
                 extra_ctx += (
                     "\n\nРезультаты веб-поиска (используй для дополнения ответа, "
                     "упомяни источник если уместно):\n" + web_context
                 )
-                logger.info(f"GROUP WEB SEARCH found context ({len(web_context)} chars)")
+                web_urls = [first_url(web_context)]
+                logger.info(f"GROUP VERIFY found context ({len(web_context)} chars)")
         except (asyncio.TimeoutError, Exception) as e:
-            logger.debug(f"web search failed: {e}")
+            logger.debug(f"web verify failed: {e}")
 
     # Build dialog history from recent messages (role-tagged)
     dialog_history = []
@@ -228,30 +255,36 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
     if not prompt:
         prompt = "(сообщение без текста — прокомментируй контекст чата, вступи в беседу)"
 
+    # Events/news get a longer reply budget (detailed supplementation)
+    max_tokens = 700 if is_event else 450
     try:
         out = await asyncio.wait_for(
             ai_client.chat(
                 prompt, system=system, extra_context=extra_ctx,
-                dialog_history=dialog_history, max_tokens=450, temperature=0.95,
+                dialog_history=dialog_history, max_tokens=max_tokens, temperature=0.95,
+                allow_static_fallback=False,
             ),
-            timeout=45.0,
+            timeout=50.0,
         )
     except asyncio.TimeoutError:
-        logger.warning(f"GROUP AI timeout (45s) chat={message.chat.id}")
+        logger.warning(f"GROUP AI timeout (50s) chat={message.chat.id}")
         return ""
 
     out = (out or "").strip()
     if not out:
         return ""
 
-    limit = config.GROUP_MAX_CHARS if directed else config.COMMENT_MAX_CHARS
+    # Events allow longer detailed answers; regular comments stay compact
+    limit = (config.GROUP_MAX_CHARS + 300) if is_event else (
+        config.GROUP_MAX_CHARS if directed else config.COMMENT_MAX_CHARS
+    )
     out = out[:limit]
 
-    # Append source URL if web search found one and AI didn't mention it
-    if web_context:
-        url = first_url(web_context)
-        if url and url not in out:
-            out += f"\n\nИсточник: {url}"
+    # Append source URLs if web research found them and AI didn't mention them
+    if web_urls:
+        missing = [u for u in web_urls[:2] if u not in out]
+        if missing:
+            out += "\n\nИсточник: " + " · ".join(missing)
 
     return out
 
@@ -355,7 +388,7 @@ async def handle_group_text(message: Message):
     await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
     await _log_group_message(message, content=out, is_media=False, is_bot=True)
 
-    # Extract & store long-term facts about users
+    # Extract & store long-term facts about the user (globally + per-group)
     try:
         await _extract_and_store_memory(message, text)
     except Exception as e:
@@ -363,7 +396,11 @@ async def handle_group_text(message: Message):
 
 
 async def _extract_and_store_memory(message: Message, text: str):
-    """Extract personal facts from user messages → store in group_memory."""
+    """Extract personal facts from a user message → store globally + per-group.
+
+    Uses the shared extract_and_store_facts() (global user_facts table) AND
+    also mirrors into group_memory so per-group context still shows it.
+    """
     if not text or not message.from_user:
         return
     u = message.from_user
@@ -373,30 +410,11 @@ async def _extract_and_store_memory(message: Message, text: str):
        message.forward_from_chat is not None:
         return
 
-    t = text.lower().strip()
-    user_id = u.id
+    name = u.first_name or u.username or ""
     chat_id = message.chat.id
-    name = u.first_name or ""
-    patterns = [
-        ("я живу в ", "живёт в"), ("я из ", "из"), ("я работаю ", "работает"),
-        ("я работаю в ", "работает в"), ("я учусь ", "учится"),
-        ("у меня собака", "есть собака"), ("у меня кот", "есть кот"),
-        ("у меня ребенок", "есть ребенок"), ("у меня дети", "есть дети"),
-        ("я люблю ", "любит"), ("мне нравится ", "нравится"),
-        ("я обожаю ", "обожает"), ("я ненавижу ", "не любит"),
-        ("я фрилансер", "фрилансер"), ("я программист", "программист"),
-        ("я дизайнер", "дизайнер"), ("я маркетолог", "маркетолог"),
-        ("я езжу на ", "ездит на"), ("я был в ", "был в"), ("я была в ", "была в"),
-    ]
-    for pattern, label in patterns:
-        if pattern in t:
-            idx = t.index(pattern) + len(pattern)
-            rest = text[idx:idx + 80].split(".")[0].split("!")[0].split("?")[0].strip()
-            if rest and 2 < len(rest) < 80:
-                fact = f"{name} {label} {rest}"
-                existing = await db.get_group_memory(chat_id, user_id=user_id, limit=20)
-                existing_facts = [r["fact"].lower() for r in existing]
-                if fact.lower() not in existing_facts:
-                    await db.add_group_memory(chat_id, user_id, fact)
-                    logger.info(f"MEMORY STORED: {fact}")
-                break
+    # Global storage (used in BOTH private & group context)
+    new_facts = await extract_and_store_facts(u.id, name, text, source_chat=chat_id)
+    # Mirror into per-group memory for group-context display
+    for fact in new_facts:
+        await db.add_group_memory(chat_id, u.id, fact)
+        logger.info(f"MEMORY STORED (group): {fact}")
