@@ -37,7 +37,7 @@ chat_router = Router()
 _MAX_HISTORY = 16  # turns loaded from DB for context
 
 
-@chat_router.message(Command("start"))
+@chat_router.message(Command("start"), F.chat.type == "private")
 async def cmd_start(message: Message):
     # Register the user even on /start
     u = message.from_user
@@ -68,20 +68,20 @@ async def cmd_help(message: Message):
     )
 
 
-@chat_router.message(Command("clear"))
+@chat_router.message(Command("clear"), F.chat.type == "private")
 async def cmd_clear(message: Message):
     uid = message.from_user.id
     n = await db.clear_private_history(uid)
     await message.reply(f"Готово — забыл историю нашего разговора ({n} сообщений) 🧹")
 
 
-@chat_router.message(Command("mood"))
+@chat_router.message(Command("mood"), F.chat.type == "private")
 async def cmd_mood(message: Message):
     mood = await current_mood_descriptor()
     await message.reply(f"Сейчас я {mood} 😎")
 
 
-@chat_router.message(Command("whoami"))
+@chat_router.message(Command("whoami"), F.chat.type == "private")
 async def cmd_whoami(message: Message):
     uid = message.from_user.id
     profile = await build_user_profile(uid)
@@ -91,10 +91,17 @@ async def cmd_whoami(message: Message):
     await message.reply(f"Вот что я о тебе помню:\n\n{profile}")
 
 
-@chat_router.message(F.text)
+@chat_router.message(F.text, F.chat.type == "private")
 async def handle_private_text(message: Message):
-    if message.chat.type != "private":
-        return  # groups handled elsewhere
+    """Private chat text handler.
+
+    CRITICAL: the F.chat.type == 'private' filter ensures this handler does NOT
+    match group messages. In aiogram 3.x, when a handler matches (even if it
+    just returns), the event is consumed and NOT propagated to subsequent
+    routers. Without this filter, chat_router (included before group_router)
+    would eat all group text messages and group_router would never see them —
+    making the bot silent in groups even with Privacy Mode OFF.
+    """
     u = message.from_user
     if not u:
         return
