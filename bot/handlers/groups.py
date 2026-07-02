@@ -148,9 +148,9 @@ async def _should_respond(message: Message) -> bool:
 
     directed = is_directed_at_bot(message)
     if directed:
-        return True
+        return True  # ALWAYS respond to direct mentions/replies
 
-    # Channel auto-forwards: dedup + probability
+    # Channel auto-forwards (news posts): dedup + high probability (was 0.40)
     is_channel_forward = (
         (u and u.id == 777000)
         or (message.sender_chat and message.sender_chat.type == "channel")
@@ -159,17 +159,18 @@ async def _should_respond(message: Message) -> bool:
     if is_channel_forward:
         if _should_skip_duplicate(message.text or "", message.chat.id):
             return False
-        return random.random() < 0.40
+        return random.random() < 0.70  # was 0.40 — bot comments on 70% of channel forwards
 
-    # Reply in an existing discussion thread → more likely to join
+    # Reply in an existing discussion thread → almost always join
     if message.reply_to_message and message.reply_to_message.from_user:
         if message.reply_to_message.from_user.id != config.BOT_ID:
-            return random.random() < (config.GROUP_PROACTIVE_PROB + 0.2)
+            return random.random() < 0.95
 
-    # Other bots' messages: high proactive chance (bot chats with bots)
+    # Other bots' messages: very high proactive chance (bot chats with bots)
     if u and u.is_bot:
-        return random.random() < 0.65
+        return random.random() < 0.80
 
+    # Regular group messages: high proactive probability
     return random.random() < config.GROUP_PROACTIVE_PROB
 
 
@@ -257,12 +258,16 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
 
     # Events/news get a longer reply budget (detailed supplementation)
     max_tokens = 700 if is_event else 450
+    # Directed messages (mention/reply) ALWAYS get a reply — use static fallback
+    # if AI fails. Non-directed: skip reply if AI silent (avoid robotic spam),
+    # but still set a reaction so the bot visibly engaged.
+    fallback = directed
     try:
         out = await asyncio.wait_for(
             ai_client.chat(
                 prompt, system=system, extra_context=extra_ctx,
                 dialog_history=dialog_history, max_tokens=max_tokens, temperature=0.95,
-                allow_static_fallback=False,
+                allow_static_fallback=fallback,
             ),
             timeout=50.0,
         )
@@ -415,7 +420,10 @@ async def handle_group_text(message: Message):
         logger.error(f"group text response error: {e}")
         return
     if not out:
-        logger.warning(f"GROUP NO RESPONSE chat={message.chat.id}")
+        logger.warning(f"GROUP NO AI RESPONSE chat={message.chat.id} — ensuring reaction")
+        # AI was silent: make sure the bot at least set a reaction (visible engagement)
+        asyncio.create_task(maybe_react(
+            message.bot, message.chat.id, message.message_id, text, prob=1.0, force=True))
         return
     logger.info(f"GROUP REPLY chat={message.chat.id} len={len(out)}")
     await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
