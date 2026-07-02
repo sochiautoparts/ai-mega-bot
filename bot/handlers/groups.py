@@ -291,10 +291,11 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
 
 @group_router.message(F.new_chat_members)
 async def handle_new_members(message: Message):
-    """Greet when the bot (or anyone) is added to a group.
+    """Greet when the bot is added to a group — short, warm, natural.
 
-    This confirms the bot is alive and receiving group events — useful for
-    the owner to verify the bot is actually online in the chat.
+    No Privacy Mode lecture: that was a leftover from when the real bug
+    (chat_router consuming group messages) was still unfixed. Now that the
+    router bug is fixed, the bot just says hi and gets to work.
     """
     if message.chat.type not in ("group", "supergroup"):
         return
@@ -302,18 +303,20 @@ async def handle_new_members(message: Message):
     bot_added = any(m and m.id == config.BOT_ID for m in newcomers)
     if not bot_added:
         return  # someone else was added; stay quiet
-    # Bot was just added → greet
+    # Bot was just added → pick a varied greeting
+    greetings = [
+        "Василий на связи 👋 Буду вписываться в беседу, ставить реакции и "
+        "дополнять новости из интернета. Кидайте темы!",
+        "Здарова! Я Василий 🤖 Готов общаться, реагировать и копать инфу по "
+        "новостям. Упомяните (@) или ответьте на сообщение — точно отвечу.",
+        "Привет всем! Это Василий 🙂 Буду активно участвовать в чате: "
+        "комментарии, реакции, факты из сети. Погнали.",
+        "Василий в здании 👋 Готов болтать, лайкать посты и раскапывать "
+        "подробности по любым новостям. Чем займёмся?",
+    ]
     try:
-        await message.reply(
-            "Василий на связи 👋\n\n"
-            "Буду активно участвовать в беседе, ставить реакции и дополнять "
-            "новости информацией из интернета. Меня можно упомянуть (@) или "
-            "ответить на сообщение — точно отвечу.\n\n"
-            "⚠️ Важно: чтобы я видел ВСЕ сообщения в группе (а не только "
-            "упоминания), отключите Privacy Mode у @BotFather:\n"
-            "/mybots → @ваш_бот → Bot Settings → Group Privacy → Turn OFF, "
-            "затем уберите и заново добавьте меня в группу."
-        )
+        import random as _r
+        await message.reply(_r.choice(greetings))
         logger.info(f"BOT ADDED to chat {message.chat.id} ({message.chat.title})")
     except Exception as e:
         logger.debug(f"greet on add failed: {e}")
