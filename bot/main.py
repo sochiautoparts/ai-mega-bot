@@ -160,8 +160,19 @@ class MegaBot:
                 pass
 
     async def start(self) -> None:
-        logger.info("=== AI Mega Bot (OpenClaw) стартует ===")
-        logger.info(f"Bot: @{config.BOT_USERNAME} (id={config.BOT_ID}), owner={config.OWNER_ID}")
+        logger.info("=== Василий (OpenClaw) стартует ===")
+
+        # Auto-detect bot identity from Telegram (robust — doesn't rely on
+        # BOT_ID/BOT_USERNAME secrets being set). is_directed_at_bot() and
+        # anti-self-reply checks depend on config.BOT_ID being correct.
+        try:
+            me = await self.bot.get_me()
+            config.BOT_ID = me.id
+            config.BOT_USERNAME = (me.username or config.BOT_USERNAME or "").lstrip("@")
+            logger.info(f"Bot: @{config.BOT_USERNAME} (id={config.BOT_ID}) «{me.first_name or ''}», owner={config.OWNER_ID}")
+        except Exception as e:
+            logger.warning(f"get_me failed (using env fallback): {e}")
+            logger.info(f"Bot: @{config.BOT_USERNAME} (id={config.BOT_ID}), owner={config.OWNER_ID}")
 
         await db.init_db()
         logger.info("DB initialized")
@@ -181,7 +192,7 @@ class MegaBot:
             logger.warning(f"delete_webhook: {e}")
 
         allowed = ["message", "edited_message", "channel_post", "edited_channel_post"]
-        logger.info("=== АИ-Мега в сети — слушаю сообщения ===")
+        logger.info("=== Василий в сети — слушаю сообщения ===")
 
         polling_retries = 0
         while True:
@@ -205,11 +216,10 @@ class MegaBot:
 
     async def _notify_owner(self) -> None:
         mood = await current_mood_descriptor()
-        s = ai_client.stats()
         try:
             await self.bot.send_message(
                 config.OWNER_ID,
-                f"Я на связи 🤖 сейчас я {mood}. "
+                f"Я на связи 🤖 Василий, сейчас я {mood}. "
                 f"OpenClaw gateway: {config.OPENCLAW_URL}. "
                 f"Провайдеры: {config.providers_status()}. "
                 f"Пиши в личку или добавь в группу/канал 💬"

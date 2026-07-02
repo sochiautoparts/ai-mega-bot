@@ -1,7 +1,7 @@
 # AI Mega Bot 🤖 (OpenClaw architecture)
 
-Мультифункциональный AI-бот в Telegram, работающий **в среде OpenClaw** и
-развёрнутый **в GitHub Actions 24/7 бесплатно**.
+Мультифункциональный AI-бот **Василий** (@aimega_bot) в Telegram, работающий
+**в среде OpenClaw** и развёрнутый **в GitHub Actions 24/7 бесплатно**.
 
 ## 🏗 Архитектура
 

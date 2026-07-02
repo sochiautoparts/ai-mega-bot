@@ -61,7 +61,7 @@ def recent_messages_to_text(recent: List[dict], limit: int = 8) -> str:
     for m in recent[-limit:]:
         who = m.get("first_name") or m.get("username") or "кто-то"
         if m.get("user_id") == config.BOT_ID:
-            who = "АИ-Мега"
+            who = "Василий"
         content = m.get("content") or ""
         if m.get("is_media"):
             cap = m.get("media_caption") or ""

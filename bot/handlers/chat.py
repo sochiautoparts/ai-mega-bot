@@ -34,7 +34,7 @@ def _history(user_id: int) -> list[dict]:
 @chat_router.message(Command("start"))
 async def cmd_start(message: Message):
     await message.reply(
-        "Привет! Я АИ-Мега 🤖\n\n"
+        "Привет! Я Василий 🤖\n\n"
         "Общаюсь в личке и активно в группах/чатах, ставлю реакции, "
         "комментирую новости и дополняю их информацией из интернета.\n\n"
         "В каналах — только реакции (лайки), без комментариев.\n\n"
