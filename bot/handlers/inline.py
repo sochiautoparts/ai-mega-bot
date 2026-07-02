@@ -81,16 +81,17 @@ async def handle_inline_query(inline_query: InlineQuery):
             input_message_content=InputTextMessageContent(
                 message_text=f"❓ {query}\n\nВасилий: {answer}"
             ),
+            thumbnail_url="https://emojiapi.dev/api/v1/robot.png",
         ),
     ]
 
     try:
-        await inline_query.answer(results, cache_time=30)
+        await inline_query.answer(results, cache_time=5, is_personal=False)
     except TelegramRetryAfter as e:
         logger.debug(f"inline RetryAfter {e.retry_after}s")
         await asyncio.sleep(e.retry_after)
         try:
-            await inline_query.answer(results, cache_time=30)
+            await inline_query.answer(results, cache_time=5, is_personal=False)
         except Exception:
             pass
     except Exception as e:

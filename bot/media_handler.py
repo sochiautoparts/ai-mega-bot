@@ -43,3 +43,28 @@ async def download_photo_as_base64(bot: Bot, message: Message, max_size: int = 5
     except Exception as e:
         logger.debug(f"photo download error: {e}")
         return ""
+
+
+async def download_voice_as_base64(bot: Bot, message: Message, max_size: int = 20_000_000) -> str:
+    """Download a voice message and return as base64 data URI (audio/ogg).
+
+    Returns '' if download fails or no voice. Suitable for Whisper transcription.
+    """
+    try:
+        if not message.voice:
+            return ""
+        voice = message.voice
+        if voice.file_size and voice.file_size > max_size:
+            logger.debug(f"voice too large ({voice.file_size} bytes), skipping")
+            return ""
+        downloaded = await bot.download(voice)
+        if downloaded is None:
+            return ""
+        raw = downloaded.read() if hasattr(downloaded, "read") else bytes(downloaded)
+        if not raw or len(raw) > max_size:
+            return ""
+        b64 = base64.b64encode(raw).decode("ascii")
+        return f"data:audio/ogg;base64,{b64}"
+    except Exception as e:
+        logger.debug(f"voice download error: {e}")
+        return ""

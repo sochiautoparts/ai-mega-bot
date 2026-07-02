@@ -219,3 +219,67 @@ async def handle_private_photo(message: Message):
     if reply:
         await db.add_private_message(u.id, "assistant", reply)
         await message.reply(reply[:4000])
+
+
+@chat_router.message(F.voice, F.chat.type == "private")
+async def handle_private_voice(message: Message):
+    """Private chat voice message — transcribe via Groq Whisper, then respond."""
+    u = message.from_user
+    if not u:
+        return
+    await db.upsert_user(u.id, username=u.username or "", first_name=u.first_name or "",
+                         last_name=u.last_name or "", is_bot=u.is_bot, in_private=True)
+    await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+
+    # 1. Download + transcribe the voice message
+    transcribed = ""
+    try:
+        from bot.media_handler import download_voice_as_base64
+        from ai import client as ai_client
+        data_uri = await download_voice_as_base64(message.bot, message)
+        if data_uri:
+            transcribed = await asyncio.wait_for(
+                ai_client.transcribe_audio(data_uri), timeout=30.0
+            )
+            if transcribed:
+                logger.info(f"VOICE transcribed ({len(transcribed)} chars): {transcribed[:60]!r}")
+    except asyncio.TimeoutError:
+        logger.warning("private voice transcription timeout")
+    except Exception as e:
+        logger.error(f"private voice error: {e}")
+
+    if not transcribed:
+        await message.reply("Не разобрал голосовое 🙈 Повтори текстом?")
+        return
+
+    # 2. Process the transcribed text like a normal message
+    update_mood_from_message(transcribed)
+    mood = await current_mood_descriptor()
+    history = await db.get_private_history(u.id, limit=16)
+    await db.add_private_message(u.id, "user", f"[голосовое]: {transcribed}")
+
+    name = u.first_name or u.username or ""
+    try:
+        new_facts = await extract_and_store_facts(u.id, name, transcribed, source_chat=message.chat.id)
+        for f in new_facts:
+            logger.info(f"FACT STORED (voice): {f}")
+    except Exception:
+        pass
+
+    user_profile = await build_user_profile(u.id)
+    ctx = build_private_context(user_profile)
+    system = SYSTEM_PROMPT + f"\n\nТвоё текущее настроение: {mood}.\n{ctx}"
+
+    try:
+        reply = await ai_client.chat(
+            transcribed, system=system, dialog_history=history,
+            max_tokens=800, temperature=0.9, allow_static_fallback=True,
+        )
+    except Exception as e:
+        logger.error(f"private voice AI error: {e}")
+        reply = ""
+
+    if not reply:
+        reply = "Услышал, но чет завис 🙈 Повтори?"
+    await db.add_private_message(u.id, "assistant", reply)
+    await message.reply(f"🎤 «{transcribed[:200]}»\n\n{reply}"[:4000])

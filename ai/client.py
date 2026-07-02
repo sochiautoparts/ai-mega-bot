@@ -427,5 +427,66 @@ async def vision(prompt: str, image_data_uri: str, system: str = "",
     return ""
 
 
+async def transcribe_audio(audio_data_uri: str, timeout: float = 30.0) -> str:
+    """Transcribe a voice message via OpenClaw (routes to Whisper via Groq/HF).
+
+    audio_data_uri: base64 data URI of the audio (data:audio/ogg;base64,...)
+    Returns the transcribed text, or '' on failure.
+    """
+    global _stats
+    _stats["requests"] += 1
+    import time as _t
+    t0 = _t.time()
+
+    if _client is None:
+        await initialize()
+
+    # OpenClaw doesn't have a direct audio transcription endpoint, but we can
+    # use Groq's Whisper API directly if GROQ_API_KEY is set.
+    groq_key = config.GROQ_API_KEY
+    if not groq_key:
+        _stats["fail"] += 1
+        _stats["last_error"] = "transcribe: no GROQ_API_KEY"
+        logger.debug("transcribe: no GROQ_API_KEY, skipping")
+        return ""
+
+    try:
+        import base64 as _b64
+        # Extract raw base64 from data URI
+        if "," in audio_data_uri:
+            raw_b64 = audio_data_uri.split(",", 1)[1]
+        else:
+            raw_b64 = audio_data_uri
+        audio_bytes = _b64.b64decode(raw_b64)
+
+        # Use Groq Whisper API directly
+        files = {
+            "file": ("voice.ogg", audio_bytes, "audio/ogg"),
+            "model": (None, "whisper-large-v3"),
+            "language": (None, "ru"),
+        }
+        r = await _client.post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            headers={"Authorization": f"Bearer {groq_key}"},
+            files=files,
+            timeout=timeout,
+        )
+        if r.status_code == 200:
+            data = r.json()
+            text = data.get("text", "") or ""
+            if text.strip():
+                _stats["success"] += 1
+                logger.info(f"AI transcribe ({_t.time()-t0:.1f}s) len={len(text)}")
+                return text.strip()
+        _stats["fail"] += 1
+        _stats["last_error"] = f"transcribe HTTP {r.status_code}: {r.text[:200]}"
+        logger.warning(f"transcribe error: {_stats['last_error']}")
+    except Exception as e:
+        _stats["fail"] += 1
+        _stats["last_error"] = f"transcribe: {type(e).__name__}: {e}"
+        logger.warning(f"transcribe exception: {e}")
+    return ""
+
+
 def stats() -> dict:
     return dict(_stats)
