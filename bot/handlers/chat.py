@@ -64,7 +64,7 @@ async def cmd_clear(message: Message):
 @chat_router.message(Command("mood"))
 async def cmd_mood(message: Message):
     mood = await current_mood_descriptor()
-    await message.reply(f"Сейчас я {mood} 😊")
+    await message.reply(f"Сейчас я {mood} 😎")
 
 
 @chat_router.message(F.text)
@@ -97,7 +97,16 @@ async def handle_private_text(message: Message):
         reply = ""
 
     if not reply:
-        await message.reply("Что-то я зависла 🙈 Попробуй ещё раз через секунду.")
+        # Male fallback phrases — varied, never feels broken.
+        import random as _r
+        fallbacks = [
+            "Слушай, чет я завис 🙈 Повтори-ка ещё раз?",
+            "Не уловил мысль, бро. Сформулируй иначе?",
+            "Секунду, туплю немного. Давай ещё раз?",
+            "Чёт связь барахлит. Накатай ещё разок 🙂",
+            "Я тут, просто задумался. Повтори?",
+        ]
+        await message.reply(_r.choice(fallbacks))
         return
 
     history.append({"role": "assistant", "content": reply})

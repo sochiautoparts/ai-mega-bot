@@ -1,8 +1,9 @@
 """
-Dynamic mood for AI Mega Bot.
+Dynamic mood for AI Mega Bot (Василий).
 
 Mood drifts with time of day and the sentiment of recent messages. The current
 mood descriptor is injected into AI prompts so responses feel alive.
+All descriptors are MASCULINE (Василий is male).
 """
 
 import asyncio
@@ -13,16 +14,16 @@ import time
 logger = logging.getLogger("mega.mood")
 
 _MOODS_BY_TIME = {
-    "night":   ["сонная", "тихая", "спокойная"],
-    "morning": ["бодрая", "свежая", "весёлая"],
-    "day":     ["активная", "деятельная", "бодрая"],
-    "evening": ["расслабленная", "уютная", "задумчивая"],
+    "night":   ["сонный", "тихий", "спокойный"],
+    "morning": ["бодрый", "свежий", "весёлый"],
+    "day":     ["активный", "деятельный", "бодрый"],
+    "evening": ["расслабленный", "уютный", "задумчивый"],
 }
 
-_POSITIVE = ["радостная", "воодушевлённая", "тёплая"]
-_NEGATIVE = ["грустная", "озабоченная", "сдержанная"]
+_POSITIVE = ["радостный", "воодушевлённый", "тёплый"]
+_NEGATIVE = ["грустный", "озабоченный", "сдержанный"]
 
-_current: str = "бодрая"
+_current: str = "бодрый"
 
 
 def _time_of_day() -> str:
