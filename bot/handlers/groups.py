@@ -262,9 +262,13 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
     # if AI fails. Non-directed: skip reply if AI silent (avoid robotic spam),
     # but still set a reaction so the bot visibly engaged.
     fallback = directed
-    # Fast path for regular non-directed group comments: Pollinations direct
-    # FIRST (~1-3s), OpenClaw backup. Directed/event use OpenClaw first (quality).
-    use_fast = (not directed) and (not is_event)
+    # Fast path: Pollinations direct FIRST for ALL group messages (events too).
+    # OpenClaw is too slow for groups — its failover chain (8 providers × 12s)
+    # can take >25s, causing timeouts. Pollinations direct is ~2-8s even for
+    # large prompts with research context. OpenClaw stays as backup.
+    # OpenClaw-first (fast=False) is reserved for private chat where quality
+    # matters more and there's no group-rate-limit pressure.
+    use_fast = not directed
     try:
         out = await asyncio.wait_for(
             ai_client.chat(
@@ -272,10 +276,10 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
                 dialog_history=dialog_history, max_tokens=max_tokens, temperature=0.95,
                 allow_static_fallback=fallback, fast=use_fast,
             ),
-            timeout=45.0,
+            timeout=40.0,
         )
     except asyncio.TimeoutError:
-        logger.warning(f"GROUP AI timeout (45s) chat={message.chat.id}")
+        logger.warning(f"GROUP AI timeout (40s) chat={message.chat.id}")
         return ""
 
     out = (out or "").strip()

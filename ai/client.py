@@ -246,15 +246,17 @@ async def chat(
     messages.append({"role": "user", "content": user_content})
 
     if fast:
-        # Fast path: Pollinations direct first (~1-3s), OpenClaw backup
-        out = await _call_pollinations_direct(messages, max_tokens, timeout=15.0)
+        # Fast path: Pollinations direct first, OpenClaw backup.
+        # Pollinations can take longer for big prompts (research context +
+        # dialog history can be 2-3KB), so allow up to 30s.
+        out = await _call_pollinations_direct(messages, max_tokens, timeout=30.0)
         if out:
             _stats["success"] += 1
             _stats["pollinations_backup"] += 1  # reusing counter for "pollinations direct"
             logger.info(f"AI fast=pollinations ({_t.time()-t0:.1f}s) len={len(out)}")
             return out
-        # OpenClaw backup (shorter timeout — we already spent up to 15s)
-        out = await _call_openclaw(messages, max_tokens, temperature, timeout=20.0)
+        # OpenClaw backup (shorter timeout — we already spent up to 30s)
+        out = await _call_openclaw(messages, max_tokens, temperature, timeout=15.0)
         if out:
             _stats["success"] += 1
             _stats["openclaw_ok"] += 1
