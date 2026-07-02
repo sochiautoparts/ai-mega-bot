@@ -469,6 +469,73 @@ async def handle_group_voice(message: Message):
     await _log_group_message(message, content=out, is_media=False, is_bot=True)
 
 
+@group_router.message(F.sticker)
+async def handle_group_sticker(message: Message):
+    """Group sticker — react with emoji, respond if directed (reply to bot)."""
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    if message.from_user is None:
+        return
+    u = message.from_user
+    if u.id == config.BOT_ID:
+        return
+
+    directed = is_directed_at_bot(message)
+    sticker_emoji = (message.sticker.emoji or "🙂") if message.sticker else "🙂"
+    await _log_group_message(message, content=f"[стикер {sticker_emoji}]", is_media=True,
+                              media_caption=sticker_emoji)
+
+    # Always react to stickers with a complementary emoji
+    asyncio.create_task(maybe_react(
+        message.bot, message.chat.id, message.message_id, sticker_emoji, prob=0.7, force=True))
+
+    # If directed (reply to bot with a sticker), respond with a text comment
+    if directed:
+        await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+        prompt = f"Тебе прислали стикер с эмодзи {sticker_emoji}. Коротко отреагируй живо (1 предложение)."
+        try:
+            out = await _generate_group_response(message, prompt, directed)
+        except Exception as e:
+            logger.debug(f"sticker response error: {e}")
+            return
+        if out:
+            await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
+            await _log_group_message(message, content=out, is_media=False, is_bot=True)
+
+
+@group_router.message(F.animation)
+async def handle_group_animation(message: Message):
+    """Group GIF/animation — react, respond if directed."""
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    if message.from_user is None:
+        return
+    u = message.from_user
+    if u.id == config.BOT_ID:
+        return
+
+    directed = is_directed_at_bot(message)
+    caption = extract_caption(message)
+    await _log_group_message(message, content=f"[гифка{': '+caption if caption else ''}]",
+                              is_media=True, media_caption=caption)
+
+    # React to GIFs
+    asyncio.create_task(maybe_react(
+        message.bot, message.chat.id, message.message_id, caption or "", prob=0.5, force=True))
+
+    if directed:
+        await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+        prompt = caption or "(тебе прислали гифку — коротко отреагируй живо)"
+        try:
+            out = await _generate_group_response(message, prompt, directed)
+        except Exception as e:
+            logger.debug(f"animation response error: {e}")
+            return
+        if out:
+            await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
+            await _log_group_message(message, content=out, is_media=False, is_bot=True)
+
+
 @group_router.message(F.text)
 async def handle_group_text(message: Message):
     if message.chat.type not in ("group", "supergroup"):

@@ -289,3 +289,31 @@ async def handle_private_voice(message: Message):
         reply = "Услышал, но чет завис 🙈 Повтори?"
     await db.add_private_message(u.id, "assistant", reply)
     await message.reply(f"🎤 «{transcribed[:200]}»\n\n{reply}"[:4000])
+
+
+@chat_router.message(F.sticker, F.chat.type == "private")
+async def handle_private_sticker(message: Message):
+    """Private chat sticker — react to the emoji + respond with a comment."""
+    u = message.from_user
+    if not u:
+        return
+    await db.upsert_user(u.id, username=u.username or "", first_name=u.first_name or "",
+                         last_name=u.last_name or "", is_bot=u.is_bot, in_private=True)
+    sticker_emoji = (message.sticker.emoji or "🙂") if message.sticker else "🙂"
+    await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+
+    mood = await current_mood_descriptor()
+    history = await db.get_private_history(u.id, limit=8)
+    await db.add_private_message(u.id, "user", f"[стикер {sticker_emoji}]")
+    system = SYSTEM_PROMPT + f"\n\nТвоё текущее настроение: {mood}."
+    prompt = f"Тебе прислали стикер с эмодзи {sticker_emoji}. Коротко отреагируй живо (1 предложение)."
+    try:
+        reply = await ai_client.chat(prompt, system=system, dialog_history=history,
+                                     max_tokens=150, temperature=0.95, allow_static_fallback=True)
+    except Exception as e:
+        logger.error(f"private sticker AI error: {e}")
+        reply = ""
+    if not reply:
+        reply = f"Прикольный стикер {sticker_emoji}"
+    await db.add_private_message(u.id, "assistant", reply)
+    await message.reply(reply[:4000])
