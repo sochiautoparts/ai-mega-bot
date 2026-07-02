@@ -22,7 +22,7 @@ from bot import database as db
 from bot.config import config
 from bot.mood import current_mood_descriptor
 from bot.context import recent_messages_to_text
-from bot.persona import COMMENT_PROMPT
+from bot.persona import TOPIC_PROMPT
 from bot.safe_send import safe_send
 from ai import client as ai_client
 
@@ -149,7 +149,7 @@ async def _check_and_start_topic(chat_id: int) -> None:
             f"Будь естественным, не формальным. Цель — вовлечь людей в разговор."
         )
 
-        system = COMMENT_PROMPT + f"\n\nТвоё текущее настроение: {mood}."
+        system = TOPIC_PROMPT + f"\n\nТвоё текущее настроение: {mood}."
         try:
             text = await asyncio.wait_for(
                 ai_client.chat(

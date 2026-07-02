@@ -30,11 +30,13 @@ PROVIDERS: list[dict] = [
         "id": "pollinations",
         "baseUrl": "https://text.pollinations.ai/openai",
         "api": "openai-completions",
-        "apiKey": "pollinations",  # literal — no real key needed
+        # No apiKey — anonymous mode. Pollinations deprecated the legacy text
+        # API for AUTHENTICATED users, but anonymous requests are NOT affected.
+        # Using no key keeps us in the unaffected anonymous tier.
         "timeoutSeconds": 12,
         "always": True,
         "models": [
-            {"id": "openai", "name": "Pollinations GPT-OSS 20B (free, no key)"},
+            {"id": "openai", "name": "Pollinations GPT-OSS 20B (free, anonymous)"},
         ],
     },
     {
@@ -172,8 +174,10 @@ def build_config() -> dict:
                 "models": p["models"],
             }
             if always:
-                # literal key (Pollinations needs no real key)
-                entry["apiKey"] = p.get("apiKey", "free")
+                # Pollinations: anonymous mode (no apiKey field at all).
+                # Only add apiKey if the provider explicitly defines one.
+                if p.get("apiKey"):
+                    entry["apiKey"] = p["apiKey"]
             else:
                 entry["apiKey"] = {
                     "source": "env", "provider": "default", "id": env,

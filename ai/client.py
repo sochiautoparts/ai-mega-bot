@@ -142,7 +142,10 @@ async def _call_pollinations_direct(messages: List[dict], max_tokens: int,
                                     timeout: float = 15.0) -> str:
     """Call Pollinations free API directly (no key needed, always available).
 
-    Pollinations accepts OpenAI-format requests. Fast (~1-3s) and reliable.
+    Uses POST /openai/chat/completions (OpenAI-compatible). The model is
+    openai-fast (GPT-OSS 20B, reasoning). Returns the content field, stripping
+    any 'reasoning' field the model may emit separately.
+
     Used as: (a) primary fast path for group comments, (b) backup when
     OpenClaw returns empty/error.
     """
@@ -154,6 +157,7 @@ async def _call_pollinations_direct(messages: List[dict], max_tokens: int,
         "temperature": 0.9,
         "max_tokens": max_tokens,
         "stream": False,
+        "referrer": "aimega-bot",
     }
     try:
         r = await _client.post(_POLLINATIONS_URL, json=payload, timeout=timeout)
@@ -161,14 +165,53 @@ async def _call_pollinations_direct(messages: List[dict], max_tokens: int,
             data = r.json()
             choices = data.get("choices") or []
             if choices:
-                content = choices[0].get("message", {}).get("content", "") or ""
+                msg = choices[0].get("message", {}) or {}
+                content = msg.get("content", "") or ""
+                # Model may emit a separate 'reasoning' field — ignore it,
+                # we only want the final answer in 'content'.
                 if content.strip():
                     return content.strip()
-        logger.debug(f"pollinations direct HTTP {r.status_code}: {r.text[:200]}")
+                # Sometimes content is empty but reasoning has the answer —
+                # fall back to it (stripped) as last resort.
+                reasoning = msg.get("reasoning", "") or ""
+                if reasoning.strip() and not content.strip():
+                    # reasoning often ends with the answer; take last 2 sentences
+                    parts = reasoning.strip().split(".")
+                    return ".".join(parts[-3:]).strip()[:500] if parts else ""
+        elif r.status_code == 429:
+            logger.debug(f"pollinations 429 rate-limited")
+        else:
+            logger.debug(f"pollinations direct HTTP {r.status_code}: {r.text[:200]}")
     except (httpx.ReadTimeout, httpx.ConnectTimeout):
         logger.debug(f"pollinations direct timeout ({timeout}s)")
     except Exception as e:
         logger.debug(f"pollinations direct error: {e}")
+    return ""
+
+
+async def _call_pollinations_get(prompt: str, timeout: float = 12.0) -> str:
+    """Fast GET endpoint for short prompts (~3-6s vs 15-20s for POST).
+
+    Pollinations GET endpoint: https://text.pollinations.ai/{prompt}
+    No system role support — embed persona instructions into the prompt text.
+    Used for short group comments where speed matters most.
+    Returns the plain-text response.
+    """
+    if _client is None:
+        await initialize()
+    from urllib.parse import quote
+    url = f"https://text.pollinations.ai/{quote(prompt)}"
+    try:
+        r = await _client.get(url, timeout=timeout, headers={"Accept": "text/plain"})
+        if r.status_code == 200:
+            text = r.text.strip()
+            if text and len(text) > 2:
+                return text[:2000]
+        logger.debug(f"pollinations GET HTTP {r.status_code}")
+    except (httpx.ReadTimeout, httpx.ConnectTimeout):
+        logger.debug(f"pollinations GET timeout ({timeout}s)")
+    except Exception as e:
+        logger.debug(f"pollinations GET error: {e}")
     return ""
 
 
@@ -246,14 +289,25 @@ async def chat(
     messages.append({"role": "user", "content": user_content})
 
     if fast:
-        # Fast path: Pollinations direct first, OpenClaw backup.
-        # Pollinations can take longer for big prompts (research context +
-        # dialog history can be 2-3KB), so allow up to 30s.
+        # Ultra-fast path: for short prompts without heavy context, use GET
+        # endpoint (~3-6s). For longer prompts (events with research context),
+        # use POST. Both are Pollinations direct (no key, anonymous).
+        use_get = (not extra_context) and (not dialog_history) and len(prompt) < 400
+        if use_get:
+            # Embed system instructions into the prompt for GET (no system role)
+            embedded = f"{system}\n\nВопрос: {prompt}\n\nВасилий (кратко, живо, по-русски):" if system else prompt
+            out = await _call_pollinations_get(embedded, timeout=12.0)
+            if out:
+                _stats["success"] += 1
+                _stats["pollinations_backup"] += 1
+                logger.info(f"AI fast=pollinations-GET ({_t.time()-t0:.1f}s) len={len(out)}")
+                return out
+        # POST path (handles system role, dialog history, long prompts)
         out = await _call_pollinations_direct(messages, max_tokens, timeout=30.0)
         if out:
             _stats["success"] += 1
-            _stats["pollinations_backup"] += 1  # reusing counter for "pollinations direct"
-            logger.info(f"AI fast=pollinations ({_t.time()-t0:.1f}s) len={len(out)}")
+            _stats["pollinations_backup"] += 1
+            logger.info(f"AI fast=pollinations-POST ({_t.time()-t0:.1f}s) len={len(out)}")
             return out
         # OpenClaw backup (shorter timeout — we already spent up to 30s)
         out = await _call_openclaw(messages, max_tokens, temperature, timeout=15.0)
@@ -272,7 +326,7 @@ async def chat(
             return out
         # Pollinations direct backup
         logger.info("OpenClaw empty → trying Pollinations direct backup")
-        out = await _call_pollinations_direct(messages, max_tokens, timeout=15.0)
+        out = await _call_pollinations_direct(messages, max_tokens, timeout=20.0)
         if out:
             _stats["success"] += 1
             _stats["pollinations_backup"] += 1

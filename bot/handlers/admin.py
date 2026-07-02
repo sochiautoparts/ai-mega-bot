@@ -50,6 +50,39 @@ async def cmd_providers(message: Message):
     await message.reply(f"🔌 Провайдеры OpenClaw:\n{config.providers_status()}")
 
 
+@admin_router.message(Command("models"))
+async def cmd_models(message: Message):
+    """Live-test available Pollinations models + show AI stats breakdown."""
+    if not _is_admin(message):
+        return
+    import httpx
+    s = ai_client.stats()
+    # Fetch Pollinations model list
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as c:
+            r = await c.get("https://text.pollinations.ai/models")
+        models = r.json() if r.status_code == 200 else []
+    except Exception:
+        models = []
+    lines = [
+        "🤖 Модели Pollinations:",
+    ]
+    for m in models:
+        lines.append(f"  • {m.get('name','?')} — {m.get('description','')[:50]}")
+        if m.get("aliases"):
+            lines.append(f"    алиасы: {', '.join(m['aliases'])}")
+    lines.append("")
+    lines.append("📊 Статистика AI (по слоям):")
+    lines.append(f"  Запросов: {s.get('requests',0)}")
+    lines.append(f"  OpenClaw: {s.get('openclaw_ok',0)}")
+    lines.append(f"  Pollinations direct: {s.get('pollinations_backup',0)}")
+    lines.append(f"  Static fallback: {s.get('static_fallback',0)}")
+    lines.append(f"  Ошибок: {s.get('fail',0)}")
+    if s.get("last_error"):
+        lines.append(f"  Посл. ошибка: {s['last_error'][:80]}")
+    await message.reply("\n".join(lines))
+
+
 @admin_router.message(Command("diag"))
 async def cmd_diag(message: Message):
     """Diagnostics: shows current chat info + what the bot actually sees.
