@@ -74,3 +74,29 @@ async def safe_reply(
             logger.debug(f"send failed in {chat_id}: {e}")
             return False
     return False
+
+
+async def safe_send(bot: Bot, chat_id: int, text: str, priority: bool = False,
+                    max_per_min: int = 15) -> bool:
+    """Send a message to a chat (not as a reply). Handles rate limits.
+
+    Used by the proactive topic starter which has no message to reply to.
+    Returns True on success.
+    """
+    if not text:
+        return False
+    if not _can_send(chat_id, max_per_min, priority):
+        logger.info(f"rate-limited skip send to {chat_id}")
+        return False
+    for attempt in range(3):
+        try:
+            await bot.send_message(chat_id, text[:4000], disable_web_page_preview=False)
+            return True
+        except TelegramRetryAfter as e:
+            wait = e.retry_after + 1
+            logger.warning(f"RetryAfter {wait}s in {chat_id}")
+            await asyncio.sleep(wait)
+        except Exception as e:
+            logger.debug(f"safe_send failed in {chat_id}: {e}")
+            return False
+    return False

@@ -181,6 +181,37 @@ async def get_recent_group_messages(chat_id: int, limit: int = 12) -> List[dict]
     return [dict(r) for r in reversed(rows)]  # chronological order
 
 
+async def get_active_group_chats(within_hours: int = 24, limit: int = 20) -> List[int]:
+    """Return chat_ids of groups that had activity in the last N hours."""
+    cutoff = int(time.time()) - within_hours * 3600
+    cur = await _conn().execute(
+        "SELECT DISTINCT chat_id FROM group_messages WHERE ts > ? AND chat_id < 0 LIMIT ?",
+        (cutoff, limit),
+    )
+    rows = await cur.fetchall()
+    return [r["chat_id"] for r in rows]
+
+
+async def last_bot_message_time(chat_id: int) -> float:
+    """Timestamp of the bot's most recent message in a chat (0 if none)."""
+    cur = await _conn().execute(
+        "SELECT ts FROM group_messages WHERE chat_id=? AND user_id=? ORDER BY id DESC LIMIT 1",
+        (chat_id, config.BOT_ID),
+    )
+    row = await cur.fetchone()
+    return float(row["ts"]) if row else 0.0
+
+
+async def last_message_time(chat_id: int) -> float:
+    """Timestamp of the most recent message in a chat (0 if none)."""
+    cur = await _conn().execute(
+        "SELECT ts FROM group_messages WHERE chat_id=? ORDER BY id DESC LIMIT 1",
+        (chat_id,),
+    )
+    row = await cur.fetchone()
+    return float(row["ts"]) if row else 0.0
+
+
 # ── Long-term memory (facts about users) ────────────────────────────────────
 async def add_group_memory(chat_id: int, user_id: int, fact: str) -> None:
     await _conn().execute(

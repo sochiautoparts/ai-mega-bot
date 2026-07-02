@@ -183,6 +183,14 @@ class MegaBot:
         # Background tasks
         asyncio.create_task(mood_loop(), name="mood_loop")
         asyncio.create_task(db.run_periodic_cleanup(), name="cleanup_loop")
+        # Proactive topic starter — Василий initiates chats in silent/active groups
+        try:
+            from bot.proactive import proactive_loop, set_bot
+            set_bot(self.bot)
+            asyncio.create_task(proactive_loop(), name="proactive_loop")
+            logger.info("Proactive topic starter enabled")
+        except Exception as e:
+            logger.warning(f"Proactive loop failed to start (non-fatal): {e}")
 
         await self._notify_owner()
 
