@@ -2,6 +2,7 @@
 Admin handler — owner/operator commands.
 
   /stats                 — AI request statistics
+  /diag                  — diagnostics: current chat info + what bot sees
   /channel_on <id>       — enable reactions for a channel
   /channel_off <id>      — disable reactions for a channel
   /broadcast <chat_id> <text>  — send a message to a chat
@@ -47,6 +48,55 @@ async def cmd_providers(message: Message):
     if not _is_admin(message):
         return
     await message.reply(f"🔌 Провайдеры OpenClaw:\n{config.providers_status()}")
+
+
+@admin_router.message(Command("diag"))
+async def cmd_diag(message: Message):
+    """Diagnostics: shows current chat info + what the bot actually sees.
+
+    Useful when the bot seems silent in a group — confirms whether messages
+    are arriving and whether Privacy Mode is blocking them.
+    """
+    if not _is_admin(message):
+        return
+    c = message.chat
+    u = message.from_user
+    info = [
+        f"🔧 Диагностика:",
+        f"Бот: @{config.BOT_USERNAME} (id={config.BOT_ID})",
+        f"Текущий чат: id={c.id}, тип={c.type}, title={c.title or '—'}",
+        f"Чат username: @{c.username}" if c.username else "Чат: без username (приватный)",
+        f"Ты: {u.first_name} (id={u.id})",
+        f"",
+        f"Владелец: {config.OWNER_ID} (ты{' ✓' if u.id == config.OWNER_ID else ' ✗'})",
+        f"Провайдеры: {config.providers_status()}",
+    ]
+    # Show recent group messages the bot logged in THIS chat
+    try:
+        recent = await db.get_recent_group_messages(c.id, limit=5)
+        info.append(f"")
+        info.append(f"Лог сообщений этого чата (последние {len(recent)}):")
+        if not recent:
+            info.append("  (пусто — бот не получил ни одного сообщения в этом чате)")
+            info.append("  → Если это группа: проверь Privacy Mode у @BotFather!")
+            info.append("    /mybots → бот → Bot Settings → Group Privacy → Turn OFF")
+        else:
+            for m in recent[-5:]:
+                who = m.get("first_name") or m.get("username") or "?"
+                if m.get("user_id") == config.BOT_ID:
+                    who = "Василий"
+                content = (m.get("content") or "")[:50]
+                info.append(f"  {who}: {content}")
+    except Exception as e:
+        info.append(f"(лог чата недоступен: {e})")
+    try:
+        await message.reply("\n".join(info))
+    except Exception:
+        # If reply fails (e.g. bot can't post in channel), try send_message
+        try:
+            await message.bot.send_message(c.id, "\n".join(info))
+        except Exception as e:
+            logger.error(f"diag reply failed: {e}")
 
 
 @admin_router.message(Command("channel_on"))

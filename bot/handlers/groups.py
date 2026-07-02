@@ -289,6 +289,36 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
     return out
 
 
+@group_router.message(F.new_chat_members)
+async def handle_new_members(message: Message):
+    """Greet when the bot (or anyone) is added to a group.
+
+    This confirms the bot is alive and receiving group events — useful for
+    the owner to verify the bot is actually online in the chat.
+    """
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    newcomers = message.new_chat_members or []
+    bot_added = any(m and m.id == config.BOT_ID for m in newcomers)
+    if not bot_added:
+        return  # someone else was added; stay quiet
+    # Bot was just added → greet
+    try:
+        await message.reply(
+            "Василий на связи 👋\n\n"
+            "Буду активно участвовать в беседе, ставить реакции и дополнять "
+            "новости информацией из интернета. Меня можно упомянуть (@) или "
+            "ответить на сообщение — точно отвечу.\n\n"
+            "⚠️ Важно: чтобы я видел ВСЕ сообщения в группе (а не только "
+            "упоминания), отключите Privacy Mode у @BotFather:\n"
+            "/mybots → @ваш_бот → Bot Settings → Group Privacy → Turn OFF, "
+            "затем уберите и заново добавьте меня в группу."
+        )
+        logger.info(f"BOT ADDED to chat {message.chat.id} ({message.chat.title})")
+    except Exception as e:
+        logger.debug(f"greet on add failed: {e}")
+
+
 @group_router.message(F.photo)
 async def handle_group_photo(message: Message):
     if message.chat.type not in ("group", "supergroup"):

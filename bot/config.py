@@ -58,11 +58,11 @@ class BotConfig:
     DB_PATH: str = field(default_factory=lambda: _env("DB_PATH", "data/bot.db"))
 
     # ── Behaviour tuning ──
-    GROUP_PROACTIVE_PROB: float = field(default_factory=lambda: float(_env("GROUP_PROACTIVE_PROB", "0.75")))
-    GROUP_MAX_PER_MINUTE: int = field(default_factory=lambda: int(_env("GROUP_MAX_PER_MINUTE", "15")))
+    GROUP_PROACTIVE_PROB: float = field(default_factory=lambda: float(_env("GROUP_PROACTIVE_PROB", "0.90")))
+    GROUP_MAX_PER_MINUTE: int = field(default_factory=lambda: int(_env("GROUP_MAX_PER_MINUTE", "20")))
     GROUP_MEMORY_SIZE: int = field(default_factory=lambda: int(_env("GROUP_MEMORY_SIZE", "30")))
-    CHANNEL_REACTION_PROB: float = field(default_factory=lambda: float(_env("CHANNEL_REACTION_PROB", "0.65")))
-    REACTION_PROB: float = field(default_factory=lambda: float(_env("REACTION_PROB", "0.45")))
+    CHANNEL_REACTION_PROB: float = field(default_factory=lambda: float(_env("CHANNEL_REACTION_PROB", "0.80")))
+    REACTION_PROB: float = field(default_factory=lambda: float(_env("REACTION_PROB", "0.55")))
     WEB_VERIFY_PROB: float = field(default_factory=lambda: float(_env("WEB_VERIFY_PROB", "1.0")))
     SEARCH_TIMEOUT_SECONDS: int = field(default_factory=lambda: int(_env("SEARCH_TIMEOUT_SECONDS", "8")))
 
