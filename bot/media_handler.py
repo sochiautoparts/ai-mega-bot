@@ -1,6 +1,7 @@
 """Media helpers — extract captions + download photos for vision understanding."""
 
 import base64
+import io
 import logging
 
 from aiogram import Bot
@@ -29,15 +30,12 @@ async def download_photo_as_base64(bot: Bot, message: Message, max_size: int = 5
         if photo.file_size and photo.file_size > max_size:
             logger.debug(f"photo too large ({photo.file_size} bytes), skipping")
             return ""
-        file = await bot.get_file(photo.file_id)
-        if not file.file_path:
+        # aiogram 3.x: bot.download() returns BinaryIO (BytesIO-like) or None
+        downloaded = await bot.download(photo)
+        if downloaded is None:
             return ""
-        # Download the file bytes
-        import httpx
-        # aiogram 3.x: bot.download_file returns bytes-like or stream
-        data = await bot.download_file(file.file_path)
-        # data is a BytesIO-like object
-        raw = data.read() if hasattr(data, "read") else data
+        # Read all bytes from the BinaryIO stream
+        raw = downloaded.read() if hasattr(downloaded, "read") else bytes(downloaded)
         if not raw or len(raw) > max_size:
             return ""
         b64 = base64.b64encode(raw).decode("ascii")

@@ -44,6 +44,7 @@ from bot.handlers.chat import chat_router
 from bot.handlers.groups import group_router
 from bot.handlers.channels import channel_router
 from bot.handlers.admin import admin_router
+from bot.handlers.inline import inline_router
 
 OPENCLAW_STATE_DIR = os.getenv("OPENCLAW_STATE_DIR", str(Path.cwd() / ".openclaw-state"))
 _openclaw_proc: subprocess.Popen | None = None
@@ -140,6 +141,7 @@ class MegaBot:
         self.dp.include_router(chat_router)
         self.dp.include_router(group_router)
         self.dp.include_router(channel_router)
+        self.dp.include_router(inline_router)
 
         # Error handler — log but never crash the bot
         from aiogram.types import ErrorEvent
@@ -200,7 +202,7 @@ class MegaBot:
         except Exception as e:
             logger.warning(f"delete_webhook: {e}")
 
-        allowed = ["message", "edited_message", "channel_post", "edited_channel_post"]
+        allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result"]
         logger.info("=== Василий в сети — слушаю сообщения ===")
 
         polling_retries = 0
