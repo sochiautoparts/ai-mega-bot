@@ -317,3 +317,40 @@ async def handle_private_sticker(message: Message):
         reply = f"Прикольный стикер {sticker_emoji}"
     await db.add_private_message(u.id, "assistant", reply)
     await message.reply(reply[:4000])
+
+
+@chat_router.message(F.chat.type == "private")
+async def handle_private_catchall(message: Message):
+    """Private chat catch-all for unhandled types (video, document, dice, etc.).
+
+    Ensures NO private message is silently ignored. Responds with a friendly
+    message acknowledging the media type.
+    """
+    u = message.from_user
+    if not u:
+        return
+    await db.upsert_user(u.id, username=u.username or "", first_name=u.first_name or "",
+                         last_name=u.last_name or "", is_bot=u.is_bot, in_private=True)
+    # Determine what was sent
+    if message.video_note:
+        label, emoji = "кружочек", "⭕"
+    elif message.video:
+        label, emoji = "видео", "🎥"
+    elif message.document:
+        label, emoji = "файл", "📄"
+    elif message.dice:
+        label, emoji = f"игральный кубик ({message.dice.emoji})", "🎲"
+    elif message.contact:
+        label, emoji = "контакт", "👤"
+    elif message.location:
+        label, emoji = "геолокацию", "📍"
+    elif message.poll:
+        label, emoji = "опрос", "📊"
+    else:
+        label, emoji = "что-то", "🤔"
+
+    caption = (message.caption or "").strip()
+    await db.add_private_message(u.id, "user", f"[{label}{': '+caption if caption else ''}]")
+    reply = f"Интересный {label} {emoji}! Расскажи текстом что к чему?"
+    await db.add_private_message(u.id, "assistant", reply)
+    await message.reply(reply)
