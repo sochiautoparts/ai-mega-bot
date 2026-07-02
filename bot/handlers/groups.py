@@ -618,3 +618,74 @@ async def _extract_and_store_memory(message: Message, text: str):
     for fact in new_facts:
         await db.add_group_memory(chat_id, u.id, fact)
         logger.info(f"MEMORY STORED (group): {fact}")
+
+
+# ── Other media types: video, video_note (кружочки), documents ──────────────
+@group_router.message(F.video | F.video_note | F.document)
+async def handle_group_other_media(message: Message):
+    """Video, video note (кружочек), document — react + respond if directed."""
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    if message.from_user is None:
+        return
+    u = message.from_user
+    if u.id == config.BOT_ID:
+        return
+
+    directed = is_directed_at_bot(message)
+    caption = extract_caption(message)
+    # Determine media type for logging
+    if message.video_note:
+        media_label = "[кружочек]"
+    elif message.video:
+        media_label = "[видео]"
+    else:
+        media_label = "[документ]"
+    await _log_group_message(message, content=f"{media_label}{': '+caption if caption else ''}",
+                              is_media=True, media_caption=caption)
+
+    # React to these media types
+    asyncio.create_task(maybe_react(
+        message.bot, message.chat.id, message.message_id, caption or "", prob=0.4, force=True))
+
+    # If directed (reply/mention), respond about the media
+    if directed:
+        await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+        if message.video_note:
+            prompt = caption or "(тебе прислали кружочек — коротко отреагируй живо)"
+        elif message.video:
+            prompt = caption or "(тебе прислали видео — коротко отреагируй живо)"
+        else:
+            prompt = caption or "(тебе прислали файл — коротко отреагируй живо)"
+        try:
+            out = await _generate_group_response(message, prompt, directed)
+        except Exception as e:
+            logger.debug(f"other media response error: {e}")
+            return
+        if out:
+            await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
+            await _log_group_message(message, content=out, is_media=False, is_bot=True)
+
+
+# ── Catch-all: dice, polls, contacts, locations, and any other type ─────────
+@group_router.message()
+async def handle_group_catchall(message: Message):
+    """Catch-all for any unhandled message type (dice, polls, contacts, etc.).
+
+    Sets a reaction so the bot visibly acknowledges the message. Does NOT
+    respond with text (avoid spam). This ensures NO group message is silently
+    ignored — every message gets at least an emoji reaction.
+    """
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    if message.from_user is None:
+        return
+    u = message.from_user
+    if u.id == config.BOT_ID:
+        return
+    # Dice special case: react with the dice emoji
+    dice_emoji = ""
+    if message.dice:
+        dice_emoji = message.dice.emoji or "🎲"
+    asyncio.create_task(maybe_react(
+        message.bot, message.chat.id, message.message_id, dice_emoji, prob=0.5, force=True))
