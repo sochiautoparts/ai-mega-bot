@@ -193,7 +193,12 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
             logger.debug(f"author profile error: {e}")
 
     mood = await current_mood_descriptor()
-    extra_ctx = build_group_context(message, recent_text, memory_facts, author_profile)
+    # Load conversation summaries (longer-term memory of what was discussed)
+    try:
+        summaries = await db.get_chat_summaries(message.chat.id, limit=2)
+    except Exception:
+        summaries = []
+    extra_ctx = build_group_context(message, recent_text, memory_facts, author_profile, summaries)
 
     # ── Web research: supplement news/events with DETAILED info ──
     is_event = _is_event_or_news(text)

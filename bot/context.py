@@ -110,11 +110,12 @@ async def build_user_profile(user_id: int) -> str:
 
 
 def build_group_context(message: Message, recent_text: str, memory_facts: List[str],
-                        author_profile: str = "") -> str:
+                        author_profile: str = "", summaries: List[dict] = None) -> str:
     """Assemble full context for a group AI prompt.
 
-    author_profile: output of build_user_profile() for the message author
-                    (passed in so we don't re-fetch).
+    author_profile: output of build_user_profile() for the message author.
+    summaries: recent conversation summaries (from chat_summaries table) —
+               lets Василий reference what was discussed earlier in the chat.
     """
     who = user_descriptor(message)
     where = chat_descriptor(message)
@@ -127,6 +128,12 @@ def build_group_context(message: Message, recent_text: str, memory_facts: List[s
         parts.append(f"Кто пишет:\n{author_profile}")
     else:
         parts.append(f"Пишет: {who}.")
+    # Conversation summaries — what was discussed recently (longer-term memory)
+    if summaries:
+        sum_lines = []
+        for s in summaries:
+            sum_lines.append(f"  • {s.get('summary','')}")
+        parts.append("О чём ранее говорили в чате:\n" + "\n".join(sum_lines))
     if recent_text:
         parts.append("Недавняя беседа:\n" + recent_text)
     if memory_facts:

@@ -95,6 +95,15 @@ CREATE TABLE IF NOT EXISTS reactions_dedup (
     ts          INTEGER NOT NULL,
     PRIMARY KEY (chat_id, message_id)
 );
+
+CREATE TABLE IF NOT EXISTS chat_summaries (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id     INTEGER NOT NULL,
+    summary     TEXT NOT NULL,
+    topics      TEXT DEFAULT '',
+    ts          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cs_chat ON chat_summaries(chat_id, id DESC);
 """
 
 _db: Optional[aiosqlite.Connection] = None
@@ -210,6 +219,33 @@ async def last_message_time(chat_id: int) -> float:
     )
     row = await cur.fetchone()
     return float(row["ts"]) if row else 0.0
+
+
+# ── Chat summaries (conversation memory) ────────────────────────────────────
+async def add_chat_summary(chat_id: int, summary: str, topics: str = "") -> None:
+    """Store a conversation summary for a chat. Keeps only the latest 3 per chat."""
+    await _conn().execute(
+        "INSERT INTO chat_summaries(chat_id, summary, topics, ts) VALUES(?,?,?,?)",
+        (chat_id, summary, topics, int(time.time())),
+    )
+    await _conn().commit()
+    # Trim to last 3 per chat
+    await _conn().execute(
+        "DELETE FROM chat_summaries WHERE chat_id=? AND id NOT IN "
+        "(SELECT id FROM chat_summaries WHERE chat_id=? ORDER BY id DESC LIMIT 3)",
+        (chat_id, chat_id),
+    )
+    await _conn().commit()
+
+
+async def get_chat_summaries(chat_id: int, limit: int = 2) -> List[dict]:
+    """Return recent conversation summaries for a chat (newest first)."""
+    cur = await _conn().execute(
+        "SELECT summary, topics, ts FROM chat_summaries WHERE chat_id=? ORDER BY id DESC LIMIT ?",
+        (chat_id, limit),
+    )
+    rows = await cur.fetchall()
+    return [dict(r) for r in rows]
 
 
 # ── Long-term memory (facts about users) ────────────────────────────────────

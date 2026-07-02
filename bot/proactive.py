@@ -181,6 +181,55 @@ async def _check_and_start_topic(chat_id: int) -> None:
         logger.debug(f"start_topic error for {chat_id}: {e}")
 
 
+async def _summarize_chat(chat_id: int) -> None:
+    """Summarize recent messages in a chat and store the summary.
+
+    Runs periodically so Василий has longer-term memory of what was discussed
+    (beyond the raw recent-message transcript). Keeps only the latest 3 per chat.
+    """
+    try:
+        recent = await db.get_recent_group_messages(chat_id, limit=20)
+        if len(recent) < 8:
+            return  # not enough to summarize
+        recent_text = recent_messages_to_text(recent, limit=15)
+        prompt = (
+            "Кратко суммаризуй что обсуждали в чате (2-3 предложения, по-русски). "
+            "Выдели главные темы. Без выдумок, только по тексту.\n\n"
+            f"Сообщения:\n{recent_text[:1500]}"
+        )
+        out = await asyncio.wait_for(
+            ai_client.chat(prompt, system="Ты суммаризатор. Кратко по-русски.", fast=True,
+                           max_tokens=150, allow_static_fallback=False),
+            timeout=20.0,
+        )
+        if out and len(out) > 20:
+            await db.add_chat_summary(chat_id, out.strip()[:500])
+            logger.info(f"Summary stored for {chat_id}: {out[:60]!r}")
+    except Exception as e:
+        logger.debug(f"summarize error for {chat_id}: {e}")
+
+
+SUMMARY_INTERVAL = 30 * 60  # 30 minutes
+
+
+async def summary_loop() -> None:
+    """Background task: periodically summarize active group conversations."""
+    logger.info("Conversation summary loop started")
+    while True:
+        try:
+            await asyncio.sleep(SUMMARY_INTERVAL)
+            groups = await db.get_active_group_chats(within_hours=6, limit=10)
+            logger.debug(f"Summarizing {len(groups)} groups")
+            for chat_id in groups:
+                await _summarize_chat(chat_id)
+                await asyncio.sleep(3)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"summary_loop error: {e}")
+            await asyncio.sleep(120)
+
+
 async def proactive_loop() -> None:
     """Background task: periodically check groups for silence and start topics."""
     logger.info("Proactive topic starter loop started")
