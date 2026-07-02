@@ -414,6 +414,61 @@ async def handle_group_photo(message: Message):
     await _log_group_message(message, content=out, is_media=False, is_bot=True)
 
 
+@group_router.message(F.voice)
+async def handle_group_voice(message: Message):
+    """Group voice message — transcribe if directed at bot, else react."""
+    if message.chat.type not in ("group", "supergroup"):
+        return
+    if message.from_user is None:
+        return
+    u = message.from_user
+    if u.id == config.BOT_ID:
+        return
+
+    directed = is_directed_at_bot(message)
+    await _log_group_message(message, content="[голосовое]", is_media=True, media_caption="")
+
+    # Non-directed voice: just set a reaction (can't transcribe every voice)
+    if not directed:
+        asyncio.create_task(maybe_react(
+            message.bot, message.chat.id, message.message_id, "", prob=0.3, force=True))
+        return
+
+    # Directed voice: transcribe + respond
+    await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+    transcribed = ""
+    try:
+        from bot.media_handler import download_voice_as_base64
+        from ai import client as ai_client
+        data_uri = await download_voice_as_base64(message.bot, message)
+        if data_uri:
+            transcribed = await asyncio.wait_for(
+                ai_client.transcribe_audio(data_uri), timeout=30.0
+            )
+    except asyncio.TimeoutError:
+        logger.warning(f"GROUP voice transcription timeout chat={message.chat.id}")
+    except Exception as e:
+        logger.debug(f"group voice error: {e}")
+
+    if not transcribed:
+        await safe_reply(message.bot, message, "Не разобрал голосовое 🙈 Повтори текстом?",
+                         always_reply=True, priority=True)
+        return
+
+    logger.info(f"GROUP VOICE transcribed chat={message.chat.id}: {transcribed[:60]!r}")
+    await _log_group_message(message, content=transcribed, is_media=False, is_bot=False)
+    # Generate response using the transcribed text
+    try:
+        out = await _generate_group_response(message, transcribed, directed)
+    except Exception as e:
+        logger.error(f"group voice response error: {e}")
+        return
+    if not out:
+        out = "Услышал, но чет завис 🙈"
+    await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
+    await _log_group_message(message, content=out, is_media=False, is_bot=True)
+
+
 @group_router.message(F.text)
 async def handle_group_text(message: Message):
     if message.chat.type not in ("group", "supergroup"):
