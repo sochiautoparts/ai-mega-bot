@@ -15,6 +15,7 @@ Commands:
   /whoami — show what the bot remembers about you
 """
 
+import asyncio
 import logging
 import random
 
@@ -164,3 +165,57 @@ async def handle_private_text(message: Message):
     # 8. Save assistant reply to DB (so it's in the remembered history too)
     await db.add_private_message(u.id, "assistant", reply)
     await message.reply(reply[:4000])
+
+
+@chat_router.message(F.photo, F.chat.type == "private")
+async def handle_private_photo(message: Message):
+    """Private chat photo — understand via vision (OpenClaw → Gemini/GPT-4o)."""
+    u = message.from_user
+    if not u:
+        return
+    caption = (message.caption or "").strip()
+    await db.upsert_user(u.id, username=u.username or "", first_name=u.first_name or "",
+                         last_name=u.last_name or "", is_bot=u.is_bot, in_private=True)
+    await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+
+    reply = ""
+    try:
+        from bot.media_handler import download_photo_as_base64
+        from ai import client as ai_client
+        from bot.persona import SYSTEM_PROMPT
+        data_uri = await download_photo_as_base64(message.bot, message)
+        if data_uri:
+            vision_prompt = (
+                f"Пользователь прислал фото. Опиши что видишь (1-2 предложения), "
+                f"потом живо отреагируй как Василий. "
+                f"{'Подпись: ' + caption if caption else ''}"
+            )
+            mood = await current_mood_descriptor()
+            system = SYSTEM_PROMPT + f"\n\nТвоё текущее настроение: {mood}."
+            reply = await asyncio.wait_for(
+                ai_client.vision(vision_prompt, data_uri, system=system, max_tokens=400),
+                timeout=30.0,
+            )
+    except asyncio.TimeoutError:
+        logger.warning("private vision timeout")
+    except Exception as e:
+        logger.error(f"private vision error: {e}")
+
+    if not reply:
+        # Fallback: treat caption as text, or static message
+        if caption:
+            # Reuse text handler logic by calling AI on the caption
+            try:
+                mood = await current_mood_descriptor()
+                system = SYSTEM_PROMPT + f"\n\nТвоё текущее настроение: {mood}."
+                history = await db.get_private_history(u.id, limit=8)
+                await db.add_private_message(u.id, "user", f"[фото]: {caption}")
+                reply = await ai_client.chat(caption, system=system, dialog_history=history,
+                                             max_tokens=400, temperature=0.9)
+            except Exception:
+                reply = ""
+        else:
+            reply = "Прикольное фото 🙂 А что на нём? Чет я не разглядел."
+    if reply:
+        await db.add_private_message(u.id, "assistant", reply)
+        await message.reply(reply[:4000])

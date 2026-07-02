@@ -375,14 +375,39 @@ async def handle_group_photo(message: Message):
                 message.bot, message.chat.id, message.message_id, "", prob=1.0))
         return
 
-    # Directed photo: respond
+    # Directed photo: respond — try vision (understand the image) first
     photo_prompt = caption or "(тебе прислали фото — коротко отреагируй живо)"
     await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
+    out = ""
+    # Try vision understanding via OpenClaw (Gemini/GPT-4o if keys present)
     try:
-        out = await _generate_group_response(message, photo_prompt, directed)
+        from bot.media_handler import download_photo_as_base64
+        from ai import client as ai_client
+        data_uri = await download_photo_as_base64(message.bot, message)
+        if data_uri:
+            vision_prompt = (
+                f"Тебе прислали фото в группе. Опиши кратко что видишь (1-2 предложения), "
+                f"потом живо отреагируй как Василий. "
+                f"{'Подпись к фото: ' + caption if caption else 'Без подписи.'}"
+            )
+            from bot.persona import DIRECT_PROMPT
+            out = await asyncio.wait_for(
+                ai_client.vision(vision_prompt, data_uri, system=DIRECT_PROMPT, max_tokens=300),
+                timeout=30.0,
+            )
+            if out:
+                logger.info(f"GROUP VISION reply chat={message.chat.id}")
+    except asyncio.TimeoutError:
+        logger.warning(f"GROUP VISION timeout chat={message.chat.id}")
     except Exception as e:
-        logger.error(f"group photo response error: {e}")
-        return
+        logger.debug(f"vision failed, falling back to text: {e}")
+    # Fallback: text-only response (caption only, no image understanding)
+    if not out:
+        try:
+            out = await _generate_group_response(message, photo_prompt, directed)
+        except Exception as e:
+            logger.error(f"group photo response error: {e}")
+            return
     if not out:
         return
     await safe_reply(message.bot, message, out, always_reply=True, priority=directed)

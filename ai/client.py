@@ -372,5 +372,60 @@ async def comment(prompt: str, extra_context: str = "", mood: str = "",
     return out
 
 
+async def vision(prompt: str, image_data_uri: str, system: str = "",
+                 max_tokens: int = 300) -> str:
+    """Describe/understand an image. Uses OpenClaw (routes to vision-capable
+    models like Gemini/GPT-4o when keys present). Pollinations has no vision.
+
+    image_data_uri: base64 data URI from media_handler.download_photo_as_base64()
+    Returns the assistant text, or '' on failure.
+    """
+    global _stats
+    _stats["requests"] += 1
+    import time as _t
+    t0 = _t.time()
+
+    if _client is None:
+        await initialize()
+
+    messages: List[dict] = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": image_data_uri}},
+        ],
+    })
+    payload = {
+        "model": _MODEL,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.7,
+        "stream": False,
+    }
+    try:
+        r = await _client.post(_ENDPOINT, json=payload, timeout=30.0)
+        if r.status_code == 200:
+            data = r.json()
+            choices = data.get("choices") or []
+            if choices:
+                content = choices[0].get("message", {}).get("content", "") or ""
+                if content.strip():
+                    _stats["success"] += 1
+                    _stats["openclaw_ok"] += 1
+                    logger.info(f"AI vision ({_t.time()-t0:.1f}s) len={len(content)}")
+                    return content.strip()
+        _stats["fail"] += 1
+        _stats["last_error"] = f"vision HTTP {r.status_code}: {r.text[:200]}"
+        logger.warning(f"vision error: {_stats['last_error']}")
+    except Exception as e:
+        _stats["fail"] += 1
+        _stats["last_error"] = f"vision: {type(e).__name__}: {e}"
+        logger.warning(f"vision exception: {e}")
+    return ""
+
+
 def stats() -> dict:
     return dict(_stats)
