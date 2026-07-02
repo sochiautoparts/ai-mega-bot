@@ -1,355 +1,265 @@
 """
-AI Mega Bot — Main Entry Point.
+AI Mega Bot — Main entry point.
 
-Runs Telegram bot (aiogram 3.x) + Flask API server concurrently.
-Designed for 24/7 operation via GitHub Actions.
+Architecture:
+  1. Generate OpenClaw config dynamically (only providers with keys + Pollinations).
+  2. Start the OpenClaw Gateway as a subprocess (OpenAI-compatible API on localhost).
+  3. Wait for the gateway to be ready.
+  4. Start the aiogram bot — all AI calls go through OpenClaw (/v1/chat/completions).
+
+In GitHub Actions this whole process is wrapped in an unlimited auto-restart
+loop (see .github/workflows/run-bot.yml) so the bot runs 24/7 for free.
 """
+
 import asyncio
-import json
 import logging
 import os
 import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
 
-# ── Logging Setup ────────────────────────────────────────────
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.fsm.storage.memory import MemoryStorage
+
+from bot.config import config
+from bot import database as db
+from bot.mood import mood_loop, current_mood_descriptor
+from ai import client as ai_client
+
+# ── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
-    level=getattr(logging, os.environ.get("LOG_LEVEL", "INFO"), logging.INFO),
+    level=getattr(logging, config.LOG_LEVEL.upper(), logging.INFO),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = logging.getLogger("ai-mega-bot")
+logger = logging.getLogger("mega.main")
+for noisy in ["aiogram.event", "httpx", "httpcore", "aiosqlite"]:
+    logging.getLogger(noisy).setLevel(logging.WARNING)
 
-# ── Import Config ────────────────────────────────────────────
-from bot.config import (
-    BOT_TOKEN, ADMIN_IDS, API_HOST, API_PORT, DB_PATH,
-    SESSION_DURATION_SECONDS, GH_REPO, validate_config, OWNER_ID,
-)
+# ── Routers (order: admin → chat → groups → channels) ───────────────────────
+from bot.handlers.chat import chat_router
+from bot.handlers.groups import group_router
+from bot.handlers.channels import channel_router
+from bot.handlers.admin import admin_router
 
-# Validate required config
-missing = validate_config()
-if missing:
-    logger.critical(f"Missing required config: {', '.join(missing)}")
-    logger.critical("Set environment variables before starting the bot.")
-    sys.exit(1)
-
-# ── Imports ──────────────────────────────────────────────────
-from aiogram import Bot, Dispatcher
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-
-from bot.database import Database
-from bot.handlers import all_routers
-from bot.middleware import (
-    ErrorHandlingMiddleware,
-    TierCheckMiddleware,
-    LoggingMiddleware,
-    RateLimitMiddleware,
-)
-from ai.router import AIRouter
+OPENCLAW_STATE_DIR = os.getenv("OPENCLAW_STATE_DIR", str(Path.cwd() / ".openclaw-state"))
+_openclaw_proc: subprocess.Popen | None = None
 
 
-# ── Global instances ─────────────────────────────────────────
-db: Database = None
-ai_router: AIRouter = None
-bot: Bot = None
-dp: Dispatcher = None
-_start_time: float = 0
+def _generate_openclaw_config() -> str:
+    """Run the config generator and return the path to openclaw.json."""
+    state_dir = OPENCLAW_STATE_DIR
+    Path(state_dir).mkdir(parents=True, exist_ok=True)
+    out = str(Path(state_dir) / "openclaw.json")
+    gen = str(Path(__file__).resolve().parent.parent / "scripts" / "gen_openclaw_config.py")
+    env = os.environ.copy()
+    env["OPENCLAW_STATE_DIR"] = state_dir
+    r = subprocess.run([sys.executable, gen, "--out", out, "--state-dir", state_dir], env=env)
+    if r.returncode != 0:
+        raise RuntimeError(f"OpenClaw config generation failed (code {r.returncode})")
+    return out
 
 
-async def on_startup(**kwargs) -> None:
-    """Initialize all resources on bot startup."""
-    global db, ai_router, _start_time, bot
-    _start_time = time.time()
-
-    logger.info("=== AI Mega Bot Starting ===")
-
-    # Initialize database
-    db = Database(DB_PATH)
-    await db.init()
-    logger.info("Database initialized")
-
-    # Initialize AI Router
-    ai_router = AIRouter(db)
-    await ai_router.init()
-    logger.info(f"AI Router initialized with {len(ai_router.providers)} providers")
-
-    # Ensure owner has permanent Ultra license
-    try:
-        owner_tier = await db.get_user_tier(OWNER_ID)
-        if owner_tier != "ultra":
-            # Create or ensure owner user
-            await db.get_or_create_user(
-                user_id=OWNER_ID,
-                username="owner",
-                first_name="Owner",
-                language_code="ru",
-            )
-            # Check if owner already has an ultra license
-            license_info = await db.check_user_license(OWNER_ID)
-            if not license_info.get("has_license") or license_info.get("plan") != "ultra":
-                license_key = await db.create_license(OWNER_ID, "ultra", duration_days=0)  # 0 = forever
-                logger.info(f"Owner Ultra license created: {license_key}")
-            else:
-                logger.info(f"Owner already has active Ultra license")
-    except Exception as e:
-        logger.error(f"Failed to set up owner license: {e}")
-
-    # Store in dispatcher workflow_data for handler access
-    # In aiogram 3.x, workflow_data is passed to handlers as kwargs
-    dp_ref = kwargs.get("dispatcher") or kwargs.get("router") or dp
-    if dp_ref:
-        dp_ref.workflow_data["db"] = db
-        dp_ref.workflow_data["ai_router"] = ai_router
-        dp_ref.workflow_data["start_time"] = _start_time
-        logger.info(f"workflow_data set: db={db is not None}, ai_router={ai_router is not None}")
-    else:
-        logger.error("Could not set workflow_data — dispatcher not found in kwargs!")
-
-    # NOTE: Cannot use setattr on Bot object — use workflow_data instead
-
-    # Send startup notification to admins
-    if bot:
-        for admin_id in ADMIN_IDS:
-            if admin_id:
-                try:
-                    provider_list = ", ".join(ai_router.providers.keys())
-                    # Count free providers that are always available
-                    free_providers = [p for p in ai_router.providers.keys()
-                                     if p in ("pollinations", "prodia")]
-                    paid_providers = [p for p in ai_router.providers.keys()
-                                     if p not in ("pollinations", "prodia")]
-                    await bot.send_message(
-                        admin_id,
-                        f"🟢 <b>AI Mega Bot запущен</b>\n\n"
-                        f"🤖 Провайдеров: {len(ai_router.providers)}\n"
-                        f"   🆓 Бесплатные: {', '.join(free_providers) or 'нет'}\n"
-                        f"   🔑 С ключами: {', '.join(paid_providers) or 'нет'}\n"
-                        f"📊 БД: {DB_PATH}\n"
-                        f"⏱ Сессия: {SESSION_DURATION_SECONDS // 60} мин\n"
-                        f"👤 Владелец: Ultra (навсегда)",
-                        parse_mode="HTML",
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to notify admin {admin_id}: {e}")
-
-    logger.info("=== AI Mega Bot Ready ===")
-
-
-async def on_shutdown(**kwargs) -> None:
-    """Cleanup on shutdown."""
-    global db, ai_router
-
-    logger.info("=== AI Mega Bot Shutting Down ===")
-
-    # Notify admins
-    if bot:
-        for admin_id in ADMIN_IDS:
-            if admin_id:
-                try:
-                    uptime = int(time.time() - _start_time) if _start_time else 0
-                    hours, remainder = divmod(uptime, 3600)
-                    minutes, seconds = divmod(remainder, 60)
-                    await bot.send_message(
-                        admin_id,
-                        f"🔴 <b>AI Mega Bot остановлен</b>\n\n"
-                        f"⏱ Uptime: {hours}ч {minutes}м {seconds}с",
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    pass
-
-    # Export data
-    if db:
-        try:
-            licenses = await db.export_licenses()
-            stats = await db.export_stats()
-
-            data_dir = Path("data")
-            data_dir.mkdir(exist_ok=True)
-
-            with open(data_dir / "licenses.json", "w", encoding="utf-8") as f:
-                json.dump(licenses, f, ensure_ascii=False, indent=2)
-
-            with open(data_dir / "stats.json", "w", encoding="utf-8") as f:
-                json.dump(stats, f, ensure_ascii=False, indent=2)
-
-            logger.info("Data exported successfully")
-        except Exception as e:
-            logger.error(f"Failed to export data: {e}")
-
-    # Close AI providers
-    if ai_router:
-        await ai_router.close()
-
-    # Close database
-    if db:
-        await db.close()
-
-    logger.info("=== AI Mega Bot Stopped ===")
-
-
-def setup_dispatcher() -> Dispatcher:
-    """Configure dispatcher with all routers and middleware."""
-    global dp
-
-    dp = Dispatcher()
-
-    # Register middleware (order matters: outer first)
-    dp.message.middleware(RateLimitMiddleware(max_per_minute=30))
-    dp.callback_query.middleware(RateLimitMiddleware(max_per_minute=30))
-    dp.message.middleware(TierCheckMiddleware())
-    dp.callback_query.middleware(TierCheckMiddleware())
-    dp.message.middleware(LoggingMiddleware())
-    dp.callback_query.middleware(LoggingMiddleware())
-    dp.message.outer_middleware(ErrorHandlingMiddleware())
-    dp.callback_query.outer_middleware(ErrorHandlingMiddleware())
-
-    # Register all routers
-    for router in all_routers:
-        dp.include_router(router)
-
-    # Register startup/shutdown
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
-
-    return dp
-
-
-# ── Flask API Server ─────────────────────────────────────────
-def create_flask_app():
-    """Create Flask API server for license verification."""
-    from flask import Flask, jsonify, request
-
-    app = Flask(__name__)
-
-    @app.route("/api/v1/health", methods=["GET"])
-    def health_check():
-        return jsonify({"status": "ok", "bot": "ai-mega-bot", "version": "1.0.0"})
-
-    @app.route("/api/v1/check-license", methods=["POST"])
-    def check_license():
-        """Check if a license key is valid."""
-        from bot.config import API_SECRET
-
-        auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {API_SECRET}":
-            return jsonify({"error": "unauthorized"}), 401
-
-        data = request.get_json(silent=True) or {}
-        key = data.get("key", "")
-
-        if not key:
-            return jsonify({"error": "key is required"}), 400
-
-        # Check in licenses.json (works even when bot is down)
-        try:
-            with open("data/licenses.json", "r") as f:
-                licenses = json.load(f)
-            for lic in licenses:
-                if lic["key"] == key and lic.get("active", True):
-                    now = time.time()
-                    if lic.get("expires_at", 0) == 0 or lic["expires_at"] > now:
-                        return jsonify({
-                            "valid": True,
-                            "plan": lic["plan"],
-                            "expires_at": lic["expires_at"],
-                        })
-            return jsonify({"valid": False, "reason": "not_found_or_expired"})
-        except FileNotFoundError:
-            return jsonify({"valid": False, "reason": "no_license_data"})
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    @app.route("/api/v1/stats", methods=["GET"])
-    def get_stats():
-        """Get public bot statistics."""
-        try:
-            with open("data/stats.json", "r") as f:
-                stats = json.load(f)
-            return jsonify(stats)
-        except FileNotFoundError:
-            return jsonify({"error": "stats not available"}), 404
-
-    @app.route("/api/v1/providers", methods=["GET"])
-    def get_providers():
-        """Get provider status (admin only)."""
-        from bot.config import API_SECRET
-
-        auth = request.headers.get("Authorization", "")
-        if auth != f"Bearer {API_SECRET}":
-            return jsonify({"error": "unauthorized"}), 401
-
-        # Return cached provider info
-        return jsonify({"providers": "use /providerstats in bot"})
-
-    return app
-
-
-def run_flask():
-    """Run Flask API server in a separate thread."""
-    app = create_flask_app()
-    app.run(host=API_HOST, port=API_PORT, threaded=True, use_reloader=False)
-
-
-# ── Main ─────────────────────────────────────────────────────
-async def main():
-    """Main entry point."""
-    global bot
-
-    # Create bot instance FIRST (needed for on_startup)
-    bot = Bot(
-        token=BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+def _start_openclaw_gateway(config_path: str) -> subprocess.Popen:
+    """Start the OpenClaw Gateway as a subprocess."""
+    env = os.environ.copy()
+    env["OPENCLAW_STATE_DIR"] = OPENCLAW_STATE_DIR
+    env["OPENCLAW_CONFIG_PATH"] = config_path
+    # Point npm-global bin into PATH if present (local installs)
+    npm_global = os.path.expanduser("~/.npm-global/bin")
+    env["PATH"] = npm_global + ":" + env.get("PATH", "")
+    cmd = [
+        config.OPENCLAW_BIN,
+        "gateway",
+        "--port", str(config.OPENCLAW_PORT),
+        "--auth", "none",
+        "--bind", "loopback",
+        "--allow-unconfigured",
+    ]
+    log_path = str(Path(OPENCLAW_STATE_DIR) / "gateway.log")
+    logger.info(f"Starting OpenClaw Gateway: {' '.join(cmd)}")
+    logger.info(f"Gateway log: {log_path}")
+    log_f = open(log_path, "a", buffering=1)
+    proc = subprocess.Popen(
+        cmd, env=env, stdout=log_f, stderr=subprocess.STDOUT,
+        # detach from our stdin so it doesn't share the tty
+        stdin=subprocess.DEVNULL,
     )
+    return proc
 
-    # Setup dispatcher
-    dp = setup_dispatcher()
 
-    # Start Flask in background thread
-    import threading
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    logger.info(f"Flask API server started on {API_HOST}:{API_PORT}")
+async def _wait_for_gateway(timeout: float = 120.0) -> bool:
+    """Poll the gateway /v1/models until it responds."""
+    import httpx
+    url = f"{config.OPENCLAW_URL}/v1/models"
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            async with httpx.AsyncClient() as c:
+                r = await c.get(url, timeout=5.0)
+                if r.status_code == 200:
+                    logger.info("OpenClaw Gateway is ready ✓")
+                    return True
+        except Exception:
+            pass
+        # check the gateway subprocess hasn't died
+        if _openclaw_proc is not None and _openclaw_proc.poll() is not None:
+            logger.error(f"OpenClaw Gateway exited early (code {_openclaw_proc.returncode})")
+            return False
+        await asyncio.sleep(2.0)
+    return False
 
-    # Calculate session end time
-    session_end = time.time() + SESSION_DURATION_SECONDS
-    logger.info(f"Session will end at {time.strftime('%H:%M:%S', time.localtime(session_end))}")
 
-    # Start polling with session timeout
+def _stop_openclaw_gateway() -> None:
+    global _openclaw_proc
+    if _openclaw_proc is not None:
+        try:
+            _openclaw_proc.terminate()
+            try:
+                _openclaw_proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                _openclaw_proc.kill()
+        except Exception as e:
+            logger.debug(f"gateway stop error: {e}")
+        _openclaw_proc = None
+
+
+class MegaBot:
+    def __init__(self):
+        if not config.BOT_TOKEN:
+            raise RuntimeError("BOT_TOKEN not set")
+        self.bot = Bot(
+            token=config.BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode=None),
+        )
+        self.dp = Dispatcher(storage=MemoryStorage())
+        self.dp.include_router(admin_router)
+        self.dp.include_router(chat_router)
+        self.dp.include_router(group_router)
+        self.dp.include_router(channel_router)
+
+        # Error handler — log but never crash the bot
+        from aiogram.types import ErrorEvent
+
+        @self.dp.error()
+        async def on_error(event: ErrorEvent):
+            try:
+                exc = event.exception
+                from aiogram.exceptions import TelegramRetryAfter
+                if isinstance(exc, TelegramRetryAfter):
+                    logger.warning(f"Flood control (RetryAfter {exc.retry_after}s) — handled")
+                else:
+                    logger.error(
+                        f"Handler error (suppressed): {type(exc).__name__}: {exc}",
+                        exc_info=False,
+                    )
+            except Exception:
+                pass
+
+    async def start(self) -> None:
+        logger.info("=== AI Mega Bot (OpenClaw) стартует ===")
+        logger.info(f"Bot: @{config.BOT_USERNAME} (id={config.BOT_ID}), owner={config.OWNER_ID}")
+
+        await db.init_db()
+        logger.info("DB initialized")
+
+        await ai_client.initialize()
+        logger.info(f"AI client ready — {config.providers_status()}")
+
+        # Background tasks
+        asyncio.create_task(mood_loop(), name="mood_loop")
+        asyncio.create_task(db.run_periodic_cleanup(), name="cleanup_loop")
+
+        await self._notify_owner()
+
+        try:
+            await self.bot.delete_webhook(drop_pending_updates=False)
+        except Exception as e:
+            logger.warning(f"delete_webhook: {e}")
+
+        allowed = ["message", "edited_message", "channel_post", "edited_channel_post"]
+        logger.info("=== АИ-Мега в сети — слушаю сообщения ===")
+
+        polling_retries = 0
+        while True:
+            try:
+                await self.dp.start_polling(self.bot, allowed_updates=allowed)
+                break
+            except Exception as e:
+                polling_retries += 1
+                logger.error(f"Polling error (attempt {polling_retries}): {type(e).__name__}: {e}")
+                if polling_retries > 50:
+                    logger.error("Too many polling retries — exiting")
+                    break
+                wait = 5 if polling_retries <= 5 else 10
+                logger.warning(f"Retrying polling in {wait}s...")
+                await asyncio.sleep(wait)
+
+        try:
+            await ai_client.close()
+        except Exception:
+            pass
+
+    async def _notify_owner(self) -> None:
+        mood = await current_mood_descriptor()
+        s = ai_client.stats()
+        try:
+            await self.bot.send_message(
+                config.OWNER_ID,
+                f"Я на связи 🤖 сейчас я {mood}. "
+                f"OpenClaw gateway: {config.OPENCLAW_URL}. "
+                f"Провайдеры: {config.providers_status()}. "
+                f"Пиши в личку или добавь в группу/канал 💬"
+            )
+        except Exception as e:
+            logger.warning(f"Could not notify owner: {e}")
+
+
+async def main():
+    global _openclaw_proc
+    # 1. Generate OpenClaw config
+    cfg_path = _generate_openclaw_config()
+    logger.info(f"OpenClaw config: {cfg_path}")
+
+    # 2. Start OpenClaw gateway subprocess
+    _openclaw_proc = _start_openclaw_gateway(cfg_path)
+
+    # 3. Wait for gateway
+    ready = await _wait_for_gateway(timeout=120.0)
+    if not ready:
+        logger.error("OpenClaw Gateway did not become ready — exiting")
+        _stop_openclaw_gateway()
+        sys.exit(1)
+
+    # 4. Start the bot
+    bot = MegaBot()
+
+    def _sig(*_):
+        logger.info("Received shutdown signal")
+        asyncio.create_task(bot.dp.stop_polling())
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop = asyncio.get_running_loop()
+            loop.add_signal_handler(sig, _sig)
+        except NotImplementedError:
+            signal.signal(sig, lambda *_: None)
+
     try:
-        # Schedule graceful shutdown before GitHub Actions timeout
-        async def session_timeout():
-            await asyncio.sleep(SESSION_DURATION_SECONDS)
-            logger.info("Session duration reached, shutting down gracefully...")
-            raise SystemExit(0)
-
-        timeout_task = asyncio.create_task(session_timeout())
-
-        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
-    except SystemExit:
-        logger.info("Bot stopped due to session timeout")
-    except Exception as e:
-        logger.critical(f"Bot polling error: {e}", exc_info=True)
+        await bot.start()
     finally:
-        try:
-            if 'timeout_task' in dir() and timeout_task:
-                timeout_task.cancel()
-        except Exception:
-            pass
-        await on_shutdown()
-        try:
-            await bot.session.close()
-        except Exception:
-            pass
+        _stop_openclaw_gateway()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user (KeyboardInterrupt)")
+        pass
     except Exception as e:
-        logger.critical(f"Fatal error: {e}")
+        logger.exception(f"Fatal: {e}")
+        _stop_openclaw_gateway()
         sys.exit(1)

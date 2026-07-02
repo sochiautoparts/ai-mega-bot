@@ -1,26 +1,93 @@
-name: Run AI Mega Bot 24/7
+name: Run AI Mega Bot 24/7 (OpenClaw)
+
+# ════════════════════════════════════════════════════════════════════════════
+# AI Mega Bot — OpenClaw architecture.
+#
+# ARCHITECTURE:
+#   - OpenClaw Gateway (Node.js) runs as a subprocess of the bot, serving an
+#     OpenAI-compatible API on localhost:18789.
+#   - Python aiogram bot handles Telegram (channels=reactons-only, groups=active
+#     +web-search, private=chat) and routes ALL AI through OpenClaw.
+#   - Multi-provider: Pollinations (free, no key) always on; Groq/Gemini/
+#     OpenRouter/HF/Cerebras/etc. auto-enable when keys are present.
+#
+# RELIABILITY (same pattern as sochiautoparts/luba):
+#   - Cancel conflicting runs + wait 60s for clean handoff
+#   - Unlimited auto-restart loop inside the run step (survives any crash)
+#   - DB cached across runs + committed to git for memory persistence
+#   - Workflow re-dispatched with retries at the end → 24/7
+#
+# SECRETS (Settings → Secrets and variables → Actions):
+#   BOT_TOKEN     (required) — token from @BotFather
+#   BOT_ID        (required) — numeric bot id
+#   OWNER_ID      (required) — your Telegram ID
+#   GH_PAT_TOKEN  (required) — GitHub PAT for self-dispatch
+#   Optional AI keys: GROQ_API_KEY, GEMINI_API_KEY, OPENROUTER_API_KEY,
+#     HF_TOKEN, CEREBRAS_API_KEY, SAMBANOVA_API_KEY, MISTRAL_API_KEY,
+#     OPENAI_API_KEY, ANTHROPIC_API_KEY, XAI_API_KEY
+#   (Bot works on Pollinations free even with NO optional keys.)
+# ════════════════════════════════════════════════════════════════════════════
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '15 0,6,12,18 * * *'
+    - cron: '0 0 * * *'      # 03:00 Moscow
+    - cron: '0 5 * * *'      # 08:00 Moscow
+    - cron: '0 10 * * *'     # 13:00 Moscow
+    - cron: '0 15 * * *'     # 18:00 Moscow
+    - cron: '0 20 * * *'     # 23:00 Moscow
+  workflow_dispatch:
   push:
     branches: [main]
     paths-ignore:
       - '**.md'
-      - 'docs/**'
-      - 'miniapp/**'
 
 concurrency:
-  group: bot-session
-  cancel-in-progress: false
+  group: mega-bot-single
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  PYTHONUNBUFFERED: "1"
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 345
+    timeout-minutes: 345  # ~5h45m
 
     steps:
+      - name: Cancel conflicting runs and wait
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+        run: |
+          echo "=== Checking for other running bot instances ==="
+          CURRENT_RUN=${{ github.run_id }}
+          REPO=${{ github.repository }}
+          for status in in_progress queued; do
+            RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/actions/runs?status=$status&per_page=10" \
+              | python3 -c '
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              for r in d.get("workflow_runs", []):
+                  if r["id"] != int(sys.argv[1]):
+                      print(r["id"])
+          except: pass
+          ' "$CURRENT_RUN")
+            for run_id in $RUNS; do
+              echo "Cancelling $status run: $run_id"
+              curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/$REPO/actions/runs/$run_id/cancel" || true
+            done
+          done
+          echo "Waiting 60s for old bot instances to fully stop..."
+          sleep 60
+          echo "=== Ready to start ==="
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -30,56 +97,148 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Set up Node.js (for OpenClaw)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+          echo "=== Python deps installed ==="
 
-      - name: Install ffmpeg for video processing
+      - name: Install OpenClaw
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg 2>/dev/null || echo "ffmpeg not available"
+          npm install -g openclaw@latest
+          openclaw --version
+          echo "=== OpenClaw installed ==="
+
+      - name: Clean Python cache
+        run: |
+          find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+          find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
       - name: Create data directory
         run: mkdir -p data
 
-      - name: Run AI Mega Bot
+      - name: Restore database cache
+        uses: actions/cache@v4
+        with:
+          path: data/bot.db
+          key: mega-bot-db-v1
+          restore-keys: |
+            mega-bot-db-
+
+      - name: Generate OpenClaw config (dry check)
         env:
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
-          OWNER_ID: ${{ secrets.OWNER_ID }}
-          BOT_USERNAME: aimega_bot
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
-          GROK_API_KEY: ${{ secrets.GROK_API_KEY }}
+        run: |
+          python3 scripts/gen_openclaw_config.py --out /tmp/oc-preview.json
+          echo "=== Active providers preview ==="
+          cat /tmp/oc-preview.json | python3 -c "import json,sys; d=json.load(sys.stdin); print('providers:', list(d['models']['providers'].keys())); print('primary:', d['agents']['defaults']['model']['primary'])"
+
+      - name: Run AI Mega Bot (OpenClaw) with unlimited auto-restart
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+          BOT_ID: ${{ secrets.BOT_ID }}
+          OWNER_ID: ${{ secrets.OWNER_ID }}
+          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+          GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          OPENCLAW_PORT: "18789"
+          # ── AI Providers (auto-enabled when key is set) ──
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           SAMBANOVA_API_KEY: ${{ secrets.SAMBANOVA_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
-          API_SECRET: ${{ secrets.API_SECRET }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          # ── Behaviour ──
           DB_PATH: data/bot.db
           LOG_LEVEL: INFO
         run: |
-          python -m bot.main
+          set +e  # disable exit-on-error so retry loop survives any crash
+          echo "=== Starting AI Mega Bot (OpenClaw) ==="
+          echo "AI providers: Pollinations (always free) + any configured keys"
+          echo "=== Launching with UNLIMITED auto-restart ==="
+          RETRY=0
+          LAST_START=0
+          while true; do
+            RETRY=$((RETRY+1))
+            echo "--- Attempt $RETRY (started $(date -u +%H:%M:%SZ)) ---"
+            NOW=$(date +%s)
+            if [ $((NOW - LAST_START)) -gt 600 ]; then
+              RETRY=1
+            fi
+            LAST_START=$NOW
+            python3 -m bot.main
+            EXIT_CODE=$?
+            echo "Bot exited with code $EXIT_CODE (attempt $RETRY) at $(date -u +%H:%M:%SZ)"
+            if [ $EXIT_CODE -eq 0 ]; then
+              sleep 5
+            elif [ $RETRY -le 3 ]; then
+              sleep 10
+            elif [ $RETRY -le 6 ]; then
+              sleep 15
+            else
+              sleep 30
+            fi
+          done
 
-      - name: Trigger next session
+      - name: Save database cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: data/bot.db
+          key: mega-bot-db-v1-${{ github.run_id }}
+
+      - name: Save database to git
         if: always()
         run: |
-          gh workflow run run-bot.yml
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          if [ -f data/bot.db ]; then
+            git config user.name "AI Mega Bot"
+            git config user.email "mega-bot@users.noreply.github.com"
+            git add -f data/bot.db || true
+            git diff --staged --quiet || git commit -m "db: update $(date +%Y-%m-%d_%H:%M)" || true
+            git add -A || true
+            git stash --include-untracked || true
+            git pull --rebase origin main || true
+            git stash pop || true
+            git push || true
+          fi
 
-  keep-alive:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-    steps:
-      - name: Trigger bot workflow
-        run: |
-          gh workflow run run-bot.yml
+      - name: Re-dispatch workflow for 24/7
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+        run: |
+          echo "=== Re-dispatching workflow for 24/7 ==="
+          REPO=${{ github.repository }}
+          sleep 10
+          for i in 1 2 3; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/actions/workflows/run-bot.yml/dispatches" \
+              -d '{"ref":"main"}')
+            if [ "$HTTP_CODE" = "204" ]; then
+              echo "Workflow re-dispatched successfully (attempt $i)"
+              break
+            fi
+            echo "Re-dispatch attempt $i failed (HTTP $HTTP_CODE), retrying in 10s..."
+            sleep 10
+          done
+
+      - name: Cleanup
+        if: always()
+        run: echo "=== Bot session ended ==="

@@ -1,1 +1,1 @@
-"""AI Mega Bot — AI Integration Layer."""
+"""AI package — talks to the OpenClaw Gateway (OpenAI-compatible API)."""

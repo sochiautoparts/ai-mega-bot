@@ -1,5 +1,0 @@
-theme: null
-plugins: []
-markdown: kramdown
-kramdown:
-  input: GFM

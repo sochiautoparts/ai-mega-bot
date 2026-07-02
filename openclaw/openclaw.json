@@ -1,0 +1,139 @@
+{
+  "$schema": "https://docs.openclaw.ai/schema/openclaw.json",
+  "gateway": {
+    "port": 18789,
+    "bind": "loopback",
+    "auth": { "mode": "none" },
+    "http": {
+      "endpoints": {
+        "chatCompletions": { "enabled": true, "maxBodyBytes": 8388608 }
+      }
+    },
+    "controlUi": { "enabled": false }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "groq/llama-3.3-70b-versatile",
+        "fallbacks": [
+          "gemini/gemini-2.0-flash",
+          "pollinations/openai",
+          "openrouter/meta-llama/llama-3.3-70b-instruct:free",
+          "huggingface/qwen2.5-7b-instruct",
+          "cerebras/llama-3.3-70b"
+        ]
+      },
+      "params": { "temperature": 0.9 },
+      "skipBootstrap": true,
+      "workspace": "."
+    }
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "pollinations": {
+        "baseUrl": "https://text.pollinations.ai/openai",
+        "api": "openai-completions",
+        "apiKey": "pollinations",
+        "timeoutSeconds": 45,
+        "models": [
+          { "id": "openai", "name": "Pollinations GPT-OSS 20B (free, no key)" }
+        ]
+      },
+      "groq": {
+        "baseUrl": "https://api.groq.com/openai/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "GROQ_API_KEY" },
+        "timeoutSeconds": 40,
+        "models": [
+          { "id": "llama-3.3-70b-versatile", "name": "Groq Llama 3.3 70B" },
+          { "id": "llama-3.1-8b-instant", "name": "Groq Llama 3.1 8B (fast)" }
+        ]
+      },
+      "gemini": {
+        "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "GEMINI_API_KEY" },
+        "timeoutSeconds": 40,
+        "models": [
+          { "id": "gemini-2.0-flash", "name": "Google Gemini 2.0 Flash" },
+          { "id": "gemini-1.5-flash", "name": "Google Gemini 1.5 Flash" }
+        ]
+      },
+      "openrouter": {
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "OPENROUTER_API_KEY" },
+        "timeoutSeconds": 45,
+        "models": [
+          { "id": "meta-llama/llama-3.3-70b-instruct:free", "name": "OpenRouter Llama 3.3 70B (free)" },
+          { "id": "google/gemma-2-9b-it:free", "name": "OpenRouter Gemma 2 9B (free)" }
+        ]
+      },
+      "huggingface": {
+        "baseUrl": "https://router.huggingface.co/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "HF_TOKEN" },
+        "timeoutSeconds": 45,
+        "models": [
+          { "id": "qwen2.5-7b-instruct", "name": "HF Qwen2.5 7B Instruct" }
+        ]
+      },
+      "cerebras": {
+        "baseUrl": "https://api.cerebras.ai/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "CEREBRAS_API_KEY" },
+        "timeoutSeconds": 40,
+        "models": [
+          { "id": "llama-3.3-70b", "name": "Cerebras Llama 3.3 70B" }
+        ]
+      },
+      "openai": {
+        "baseUrl": "https://api.openai.com/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "OPENAI_API_KEY" },
+        "timeoutSeconds": 40,
+        "models": [
+          { "id": "gpt-4o-mini", "name": "OpenAI GPT-4o mini" },
+          { "id": "gpt-4o", "name": "OpenAI GPT-4o" }
+        ]
+      },
+      "anthropic": {
+        "baseUrl": "https://api.anthropic.com/v1",
+        "api": "anthropic-messages",
+        "apiKey": { "source": "env", "provider": "default", "id": "ANTHROPIC_API_KEY" },
+        "timeoutSeconds": 40,
+        "models": [
+          { "id": "claude-3-5-sonnet-latest", "name": "Anthropic Claude 3.5 Sonnet" }
+        ]
+      },
+      "xai": {
+        "baseUrl": "https://api.x.ai/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "XAI_API_KEY" },
+        "timeoutSeconds": 40,
+        "models": [
+          { "id": "grok-beta", "name": "xAI Grok Beta" }
+        ]
+      },
+      "mistral": {
+        "baseUrl": "https://api.mistral.ai/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "MISTRAL_API_KEY" },
+        "timeoutSeconds": 40,
+        "models": [
+          { "id": "mistral-small-latest", "name": "Mistral Small" }
+        ]
+      },
+      "sambanova": {
+        "baseUrl": "https://api.sambanova.ai/v1",
+        "api": "openai-completions",
+        "apiKey": { "source": "env", "provider": "default", "id": "SAMBANOVA_API_KEY" },
+        "timeoutSeconds": 45,
+        "models": [
+          { "id": "Meta-Llama-3.1-8B-Instruct", "name": "SambaNova Llama 3.1 8B" }
+        ]
+      }
+    }
+  }
+}

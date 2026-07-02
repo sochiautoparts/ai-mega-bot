@@ -1,104 +1,166 @@
-# AI Mega Bot 🤖
+# AI Mega Bot 🤖 (OpenClaw architecture)
 
-Мультифункциональный AI-хаб в Telegram — чат, генерация картинок, перевод, транскрипция аудио, помощь с кодом.
-
-## 🎯 Возможности
-
-| Функция | Описание | Бесплатно |
-|---------|----------|-----------|
-| 💬 **Чат с AI** | Общение с нейросетями (Llama 3.3 70B, DeepSeek, GPT-4o mini) | ✅ 10/день |
-| 🎨 **Генерация картинок** | Создание изображений по описанию (Flux, Stable Diffusion) | ✅ 3/день |
-| 🎤 **Транскрипция** | Голосовые сообщения → текст (Whisper) | ✅ 1/день |
-| 🌍 **Перевод** | Мгновенный перевод на 30+ языков (NLLB-200) | ✅ 5/день |
-| 💻 **Помощь с кодом** | Отладка, оптимизация, генерация кода | ✅ 5/день |
-| 🔊 **TTS** | Текст в речь (Pro+) | ⭐ Pro |
-
-## 💎 Тарифы
-
-| | 🆓 Free | ⭐ Pro | 💎 Ultra |
-|---|---------|--------|----------|
-| Цена | 0 ★ | 149 ★/мес | 499 ★/мес |
-| Чат | 10/день | 200/день | ∞ |
-| Картинки | 3/день | 30/день | 100/день |
-| Перевод | 5/день | 100/день | ∞ |
-| Быстрые модели | ❌ | ✅ | ✅ |
-| История чата | ❌ | 7 дней | 30 дней |
+Мультифункциональный AI-бот в Telegram, работающий **в среде OpenClaw** и
+развёрнутый **в GitHub Actions 24/7 бесплатно**.
 
 ## 🏗 Архитектура
 
 ```
-ai-mega-bot/
-├── bot/                    # Telegram Bot (aiogram 3.x)
-│   ├── main.py             # Точка входа (bot + Flask API)
-│   ├── config.py           # Конфигурация (env vars)
-│   ├── database.py         # SQLite WAL mode
-│   ├── handlers/           # Обработчики команд
-│   ├── keyboards.py        # Inline клавиатуры
-│   └── middleware.py       # Tier enforcement, rate limits
-├── ai/                     # AI интеграции
-│   ├── router.py           # AI Router с fallback цепочками
-│   ├── rate_limiter.py     # Лимиты провайдеров
-│   ├── cache.py            # LRU + SQLite кэш
-│   └── providers/          # Адаптеры AI API
-├── api/                    # REST API (Flask)
-├── miniapp/                # Mini App (GitHub Pages)
-├── data/                   # Публичные данные
-└── .github/workflows/      # 24/7 GitHub Actions
+┌─────────────────────────────────────────────────────────────┐
+│  GitHub Actions runner (ubuntu-latest)                      │
+│                                                             │
+│   ┌──────────────────────┐    OpenAI-compatible API         │
+│   │  OpenClaw Gateway    │  POST /v1/chat/completions       │
+│   │  (Node.js, port 18789│◀────────────────────────┐        │
+│   │  OpenAI endpoint on) │                         │        │
+│   └──────────┬───────────┘                         │        │
+│              │ model failover + key rotation        │        │
+│   ┌──────────▼─────────────┐  Pollinations(free)   ┌────────┴───────┐
+│   │  AI providers          │  Groq/Gemini/OR/HF/   │ Python aiogram │
+│   │  (11 providers)        │  Cerebras/OpenAI/...  │ bot (handlers) │
+│   └────────────────────────┘                       └────────────────┘
+│                                                             │
+│   unlimited auto-restart loop → 24/7                        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## 🤖 AI Провайдеры
+**OpenClaw** разворачивается в Actions как Gateway (Node.js), который отдаёт
+OpenAI-совместимый `POST /v1/chat/completions` на localhost. Python-бот
+(aiogram) обрабатывает Telegram-логику и **все AI-запросы** направляет через
+OpenClaw — то есть бот работает именно в среде OpenClaw.
 
-| Провайдер | Тип | Лимит | Ключ |
-|-----------|-----|-------|------|
-| **Pollinations** | Текст + Изображения | ∞ | Не нужен! |
-| Groq | Текст + Whisper | 14 400/день | Нужен |
-| OpenRouter | Текст | 10 000/день | Нужен |
-| GitHub Models | Текст | 200/день | Нужен |
-| Gemini | Текст + Перевод | 1 500/день | Нужен |
-| Cerebras | Текст | 1 000 000/день | Нужен |
-| HuggingFace | Мультимедиа | 5 000/день | Нужен |
+## 🎯 Поведение бота
 
-**Pollinations работает без ключа — бот запускается сразу!**
-Другие провайдеры подключаются при наличии ключей для увеличения лимитов.
+| Где добавлен бот | Что делает |
+|---|---|
+| 📰 **Канал** | **Только реакции** (👍❤️🔥😄😮🙏) на посты. Без комментариев — канал остаётся чистым. |
+| 👥 **Группа / супергруппа** | **Активно общается** со всеми (включая ботов), ставит реакции, комментирует новости и события. **Дополняет** новости и события информацией из интернета (веб-поиск). |
+| 💬 **Личный чат** | Обычное общение с памятью диалога. |
+
+## 🤖 AI-провайдеры (через OpenClaw)
+
+Бот **всегда работает** на Pollinations (бесплатно, без ключа). Остальные
+провайдеры **автовключаются** при наличии ключа в GitHub Secrets:
+
+| Провайдер | Тип | Ключ |
+|-----------|-----|------|
+| **Pollinations** | Текст (GPT-OSS 20B) | Не нужен (free) |
+| Groq | Llama 3.3 70B (быстрый) | `GROQ_API_KEY` |
+| Google Gemini | 2.0 Flash | `GEMINI_API_KEY` |
+| OpenRouter | free-модели (Llama, Gemma) | `OPENROUTER_API_KEY` |
+| HuggingFace | Qwen2.5 7B | `HF_TOKEN` |
+| Cerebras | Llama 3.3 70B | `CEREBRAS_API_KEY` |
+| SambaNova | Llama 3.1 8B | `SAMBANOVA_API_KEY` |
+| Mistral | Mistral Small | `MISTRAL_API_KEY` |
+| OpenAI | GPT-4o / mini | `OPENAI_API_KEY` |
+| Anthropic | Claude 3.5 Sonnet | `ANTHROPIC_API_KEY` |
+| xAI | Grok | `XAI_API_KEY` |
+
+Конфиг OpenClaw генерируется **динамически** при старте (`scripts/gen_openclaw_config.py`)
+— в него попадают только провайдеры с реальными ключами + Pollinations.
+Порядок failover: Groq → Gemini → Cerebras → OpenRouter → HF → … → Pollinations.
+
+## 🔄 Надёжность 24/7 (как у luba)
+
+`.github/workflows/run-bot.yml` реализует тот же паттерн, что и
+[sochiautoparts/luba](https://github.com/sochiautoparts/luba):
+
+1. **Cancel conflicting runs** — отменяет другие запуски и ждёт 60с для чистой передачи.
+2. **Unlimited auto-restart loop** — бот перезапускается при любом падении
+   (экспоненциальный бэкофф 5→10→15→30с).
+3. **DB cache** — SQLite кэшируется между запусками (actions/cache).
+4. **DB git commit** — база коммитится в репо для персистентности памяти.
+5. **Re-dispatch** — в конце ворклоу триггерит следующий запуск (3 попытки) → 24/7.
+6. **concurrency: cancel-in-progress** — только один экземпляр бота одновременно.
 
 ## 🚀 Запуск
 
+### GitHub Actions (24/7 бесплатно)
+
+1. Форкните/клонируйте репозиторий.
+2. `Settings → Secrets and variables → Actions` добавьте секреты (см. ниже).
+3. Запустите workflow `Run AI Mega Bot 24/7 (OpenClaw)` (`workflow_dispatch`).
+
 ### Локально
+
 ```bash
 pip install -r requirements.txt
-export BOT_TOKEN=your_token
+npm install -g openclaw@latest      # Node 22+
+cp .env.example .env                # заполнить BOT_TOKEN
 python -m bot.main
 ```
 
-### GitHub Actions (24/7 бесплатно)
-1. Создайте публичный репозиторий
-2. Добавьте секреты (Settings → Secrets)
-3. Запустите workflow `run-bot.yml`
-
 ## 🔑 Секреты GitHub
 
-| Секрет | Описание | Обязательный |
-|--------|----------|-------------|
-| `BOT_TOKEN` | Токен от @BotFather | ✅ Да |
-| `OWNER_ID` | Telegram ID владельца | ✅ Да |
-| `ADMIN_IDS` | Telegram ID админов | ✅ Да |
-| `GH_PAT_TOKEN` | GitHub PAT для keep-alive | ✅ Да |
-| `API_SECRET` | Секрет для REST API | ✅ Да |
-| `GROQ_API_KEY` | API ключ Groq | ❌ Опционально |
-| `OPENROUTER_API_KEY` | API ключ OpenRouter | ❌ Опционально |
-| `GITHUB_TOKEN` | GitHub PAT для Models | ❌ Опционально |
-| `GEMINI_API_KEY` | Google AI API ключ | ❌ Опционально |
-| `HF_TOKEN` | HuggingFace Access Token | ❌ Опционально |
-| `CEREBRAS_API_KEY` | Cerebras API ключ | ❌ Опционально |
+| Секрет | Обязательный | Описание |
+|--------|:---:|---|
+| `BOT_TOKEN` | ✅ | Токен от @BotFather |
+| `BOT_ID` | ✅ | Числовой ID бота |
+| `OWNER_ID` | ✅ | Ваш Telegram ID |
+| `GH_PAT_TOKEN` | ✅ | GitHub PAT для self-dispatch |
+| `GROQ_API_KEY` | опц. | https://console.groq.com/keys |
+| `GEMINI_API_KEY` | опц. | https://aistudio.google.com/apikey |
+| `OPENROUTER_API_KEY` | опц. | https://openrouter.ai/keys |
+| `HF_TOKEN` | опц. | https://huggingface.co/settings/tokens |
+| `CEREBRAS_API_KEY` | опц. | https://cloud.cerebras.ai/ |
+| `SAMBANOVA_API_KEY` | опц. | https://cloud.sambanova.ai/ |
+| `MISTRAL_API_KEY` | опц. | https://console.mistral.ai/ |
+| `OPENAI_API_KEY` | опц. | платный |
+| `ANTHROPIC_API_KEY` | опц. | платный |
+| `XAI_API_KEY` | опц. | платный |
 
-> **Бот работает сразу с Pollinations (без ключей).** Дополнительные ключи увеличивают скорость и лимиты.
+> **Бот работает сразу на Pollinations (без ключей).** Ключи увеличивают
+> скорость, надёжность и лимиты.
 
-## 💰 Монетизация
+## ⚙️ Настройки бота (@BotFather)
 
-Telegram Stars (XTR) — встроенная платёжная система:
-- Оплата прямо в Telegram
-- Без комиссий для пользователей
-- Вывод: Stars → Fragment → TON → рубли
+### 1. Group Privacy → OFF (чтобы бот видел ВСЕ сообщения в группах)
+`@BotFather` → `/mybots` → ваш бот → **Bot Settings** → **Group Privacy** → **Turn off**
+
+### 2. Реакции в каналах (чтобы бот ставил 👍❤️🔥)
+Добавьте бота **админом канала**:
+- Канал → **Manage Channel** → **Administrators** → **Add Administrator**
+- Найдите бота, дайте право **Post Messages** (реакции работают автоматически)
+
+В группах реакции работают без админки — бот просто должен быть участником.
+
+## 📁 Структура
+
+```
+ai-mega-bot/
+├── .github/workflows/run-bot.yml   # 24/7 надёжный перезапуск (luba-style)
+├── openclaw/openclaw.json          # пример конфига OpenClaw (полный)
+├── scripts/gen_openclaw_config.py  # динамическая генерация конфига по ключам
+├── bot/
+│   ├── main.py                     # запуск OpenClaw gateway + бот
+│   ├── config.py                   # конфиг из env
+│   ├── database.py                 # SQLite (каналы, группы, память, дедуп)
+│   ├── reactions.py                # emoji-реакции
+│   ├── web_search.py               # DuckDuckGo + SearXNG + Yandex
+│   ├── context.py                  # сбор контекста who/where/recent/memory
+│   ├── mood.py                     # динамическое настроение
+│   ├── safe_send.py                # rate-limit-safe отправка
+│   ├── persona.py                  # системные промпты
+│   ├── media_handler.py            # обработка медиа
+│   └── handlers/
+│       ├── channels.py             # ТОЛЬКО реакции на посты каналов
+│       ├── groups.py               # активное общение + веб-поиск
+│       ├── chat.py                 # личные чаты
+│       └── admin.py                # команды владельца
+├── ai/client.py                    # клиент → OpenClaw /v1/chat/completions
+├── requirements.txt
+└── .env.example
+```
+
+## 🧠 Команды
+
+- `/start`, `/help` — приветствие
+- `/clear` — забыть историю личного чата
+- `/mood` — показать настроение
+- `/stats` (владелец) — статистика AI-запросов
+- `/providers` (владелец) — активные провайдеры OpenClaw
+- `/channel_on <id>` / `/channel_off <id>` (владелец) — вкл/выкл реакции канала
+- `/broadcast <chat_id> <text>` (владелец) — отправить сообщение
 
 ## 📄 Лицензия
 

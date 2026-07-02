@@ -1,132 +1,104 @@
 """
-AI Mega Bot — Chat Handler.
+Private chat handler — normal AI conversation through OpenClaw.
 
-Routes plain text messages to AI as "text" task.
-Manages chat history and daily limits.
-Passes conversation history to AI providers for context memory.
+The bot remembers the recent dialog per user and answers naturally. /clear
+resets the in-memory dialog. /help lists commands.
 """
+
 import logging
 
 from aiogram import Router, F
-from aiogram.filters import Command
 from aiogram.types import Message
+from aiogram.enums import ChatAction
+from aiogram.filters import Command
 
-from bot.config import TIER_LIMITS, OWNER_ID, ADMIN_IDS
-from ai.router import AllProvidersExhaustedError
+from bot.config import config
+from bot.mood import update_mood_from_message, current_mood_descriptor
+from bot.persona import SYSTEM_PROMPT
+from ai import client as ai_client
 
-logger = logging.getLogger(__name__)
-router = Router()
+logger = logging.getLogger("mega.chat")
+
+chat_router = Router()
+
+# In-memory dialog history per user (kept short). Lost on restart — acceptable
+# for a GitHub Actions bot (state that matters lives in the group DB).
+_dialogs: dict[int, list[dict]] = {}
+_MAX_HISTORY = 8
 
 
-@router.message(Command("clear"))
-async def cmd_clear(message: Message, db=None) -> None:
-    """Clear chat history."""
-    # db is injected from workflow_data
-    if db:
-        await db.clear_chat_history(message.from_user.id)
-    await message.answer("🗑 История чата очищена! Начнём сначала.")
+def _history(user_id: int) -> list[dict]:
+    return _dialogs.setdefault(user_id, [])
 
 
-@router.message(F.text, ~F.text.startswith("/"))
-async def handle_chat(message: Message, db=None, ai_router=None) -> None:
-    """Handle any text message (non-command) as AI chat with context memory."""
-    # db and ai_router are injected from workflow_data
+@chat_router.message(Command("start"))
+async def cmd_start(message: Message):
+    await message.reply(
+        "Привет! Я АИ-Мега 🤖\n\n"
+        "Общаюсь в личке и активно в группах/чатах, ставлю реакции, "
+        "комментирую новости и дополняю их информацией из интернета.\n\n"
+        "В каналах — только реакции (лайки), без комментариев.\n\n"
+        "Пиши что угодно — отвечу 🙂"
+    )
 
-    if not db or not ai_router:
-        await message.answer("❌ Сервис временно недоступен. Попробуйте позже.")
+
+@chat_router.message(Command("help"))
+async def cmd_help(message: Message):
+    await message.reply(
+        "Команды:\n"
+        "/start — приветствие\n"
+        "/clear — забыть историю чата\n"
+        "/mood — показать настроение\n"
+        "/stats — статистика (владелец)\n\n"
+        "В группе упомяни меня (@) или ответь на сообщение — отвечу. "
+        "Иначе комментирую по настроению."
+    )
+
+
+@chat_router.message(Command("clear"))
+async def cmd_clear(message: Message):
+    _dialogs.pop(message.from_user.id, None)
+    await message.reply("Готово — забыл историю нашего разговора 🧹")
+
+
+@chat_router.message(Command("mood"))
+async def cmd_mood(message: Message):
+    mood = await current_mood_descriptor()
+    await message.reply(f"Сейчас я {mood} 😊")
+
+
+@chat_router.message(F.text)
+async def handle_private_text(message: Message):
+    if message.chat.type != "private":
+        return  # groups handled elsewhere
+    text = (message.text or "").strip()
+    if not text or text.startswith("/"):
         return
 
-    user_id = message.from_user.id
-    text = message.text
+    update_mood_from_message(text)
+    mood = await current_mood_descriptor()
 
-    # Ensure user exists
-    await db.get_or_create_user(
-        user_id=user_id,
-        username=message.from_user.username or "",
-        first_name=message.from_user.first_name or "",
-        language_code=message.from_user.language_code or "ru",
-    )
+    history = _history(message.from_user.id)
+    history.append({"role": "user", "content": text})
+    # keep only recent turns
+    if len(history) > _MAX_HISTORY:
+        history[:] = history[-_MAX_HISTORY:]
 
-    # Get tier and limits
-    tier = await db.get_user_tier(user_id)
-    limits = TIER_LIMITS.get(tier, TIER_LIMITS["free"])
+    system = SYSTEM_PROMPT + f"\n\nТвоё текущее настроение: {mood}."
 
-    # Check daily limit (owner/admins bypass)
-    if user_id not in ADMIN_IDS and user_id != OWNER_ID:
-        daily_usage = await db.get_daily_usage(user_id, "text")
-        if daily_usage >= limits.text_requests:
-            if limits.text_requests >= 9999:
-                pass  # Unlimited
-            else:
-                await message.answer(
-                    f"⏳ Вы достигли дневного лимита чата ({limits.text_requests}).\n"
-                    "Оформите подписку для увеличения лимитов: /subscribe"
-                )
-                return
-
-    # Show typing indicator
-    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-
-    # Get chat history for context memory
-    history = []
-    if limits.history_days > 0:
-        history = await db.get_chat_history(
-            user_id,
-            limit=20,
-            max_age_days=limits.history_days,
-        )
-
-    # Build system prompt for context
-    system_prompt = (
-        "Ты — AI Mega Bot, дружелюбный и умный AI-ассистент. "
-        "Отвечай на том языке, на котором задаёт вопрос пользователь. "
-        "Будь полезным, точным и лаконичным. "
-        "Учитывай контекст предыдущих сообщений в разговоре."
-    )
-
-    # Save user message to history
-    await db.add_chat_message(user_id, "user", text)
-
+    await message.bot.send_chat_action(message.chat.id, ChatAction.TYPING)
     try:
-        # Route to AI WITH conversation history for context memory
-        result = await ai_router.route(
-            task_type="text",
-            prompt=text,
-            user_id=user_id,
-            tier=tier,
-            system_prompt=system_prompt,
-            messages=history,  # Pass conversation history!
-        )
-
-        # Record usage
-        await db.record_usage(
-            user_id, "text", result.provider, tokens=result.tokens_used
-        )
-
-        # Save assistant message to history
-        response_text = result.text or "⚠️ Пустой ответ от AI."
-        await db.add_chat_message(
-            user_id, "assistant", response_text, tokens=result.tokens_used
-        )
-
-        # Send response (truncate if too long for Telegram)
-        if len(response_text) > 4096:
-            # Split long messages
-            for i in range(0, len(response_text), 4096):
-                chunk = response_text[i:i + 4096]
-                await message.answer(chunk)
-        else:
-            await message.answer(response_text)
-
-    except AllProvidersExhaustedError:
-        logger.error(f"All providers exhausted for text task, user={user_id}")
-        await message.answer(
-            "😔 Все AI-провайдеры сейчас недоступны.\n"
-            "Попробуйте через пару минут."
+        reply = await ai_client.chat(
+            text, system=system, dialog_history=history[:-1],
+            max_tokens=800, temperature=0.9,
         )
     except Exception as e:
-        logger.exception(f"Chat error for user={user_id}: {e}")
-        await message.answer(
-            "❌ Произошла ошибка при обработке запроса.\n"
-            "Попробуйте ещё раз."
-        )
+        logger.error(f"private chat AI error: {e}")
+        reply = ""
+
+    if not reply:
+        await message.reply("Что-то я зависла 🙈 Попробуй ещё раз через секунду.")
+        return
+
+    history.append({"role": "assistant", "content": reply})
+    await message.reply(reply[:4000])

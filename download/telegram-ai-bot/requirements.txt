@@ -1,5 +1,0 @@
-# Зависимости AI-бота для Telegram
-aiogram==3.15.0
-openai==1.58.1
-aiosqlite==0.20.0
-python-dotenv==1.0.1

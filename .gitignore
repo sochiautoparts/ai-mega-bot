@@ -1,46 +1,31 @@
-# Python
+# ── Python ──
 __pycache__/
 *.py[cod]
-*$py.class
 *.egg-info/
-dist/
-build/
-.eggs/
-
-# Virtual environment
-venv/
 .venv/
+venv/
 env/
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Database
+# ── Data / runtime ──
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 *.db
+*.db-journal
 *.db-wal
 *.db-shm
 
-# Data (generated at runtime)
-data/bot.db
-data/licenses.json
-data/stats.json
+# ── OpenClaw local state (do not commit) ──
+.openclaw-state/
+openclaw-state/
+logs/
 
-# Secrets
+# ── Secrets ──
 .env
 .env.local
-*.pem
-*.key
+*.secret
 
-# Logs
-*.log
-
-# OS
+# ── OS ──
 .DS_Store
 Thumbs.db
-
-# Temporary
-*.tmp
-*.bak
