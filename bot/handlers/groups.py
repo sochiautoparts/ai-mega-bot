@@ -40,6 +40,7 @@ from bot.context import (
     build_user_profile, extract_and_store_facts,
 )
 from bot.mood import update_mood_from_message, current_mood_descriptor
+from bot.partners import partner_manager
 from bot.reactions import maybe_react
 from bot.safe_send import safe_reply
 from bot.web_search import verify_claim, research_topic, first_url, all_urls
@@ -257,6 +258,22 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
             "- @bmw_mpower_club — BMW клуб\n"
             "Вставь ОДНО упоминание естественно, как знакомый советует. Не в лоб."
         )
+
+    # ── Partner recommendations: context-aware affiliate links ──
+    # Uses ONLY goto_link from partners.json. Bot understands what each partner
+    # does and can recommend them naturally in conversation.
+    try:
+        await partner_manager.refresh_if_needed()
+        partners = partner_manager.get_relevant_partners(text, max_programs=2)
+        if partners:
+            extra_ctx += (
+                "\n\nПартнёры (если к месту, вставь ОДНУ ссылку естественно — "
+                "как знакомый советует, не в каждом ответе):\n"
+            )
+            for p in partners:
+                extra_ctx += f"- {p}\n"
+    except Exception as e:
+        logger.debug(f"partner recommendations error: {e}")
 
     # ── Web research: supplement news/events with DETAILED info ──
     is_event = _is_event_or_news(text)

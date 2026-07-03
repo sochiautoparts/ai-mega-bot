@@ -57,6 +57,9 @@ class BotConfig:
     # ── Database ──
     DB_PATH: str = field(default_factory=lambda: _env("DB_PATH", "data/bot.db"))
 
+    # ── Partners / affiliate ──
+    PARTNERS_URL: str = field(default_factory=lambda: _env("PARTNERS_URL", "https://sochiautoparts.ru/partners.json"))
+
     # ── Behaviour tuning ──
     GROUP_PROACTIVE_PROB: float = field(default_factory=lambda: float(_env("GROUP_PROACTIVE_PROB", "0.95")))
     GROUP_MAX_PER_MINUTE: int = field(default_factory=lambda: int(_env("GROUP_MAX_PER_MINUTE", "20")))

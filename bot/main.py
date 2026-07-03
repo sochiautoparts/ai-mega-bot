@@ -182,6 +182,14 @@ class MegaBot:
         await ai_client.initialize()
         logger.info(f"AI client ready — {config.providers_status()}")
 
+        # Load partners (affiliate programs from sochiautoparts.ru)
+        try:
+            from bot.partners import partner_manager
+            await partner_manager.load()
+            logger.info(f"Partners loaded: {len(partner_manager.campaigns)} campaigns")
+        except Exception as e:
+            logger.warning(f"Partner load failed (non-fatal): {e}")
+
         # Background tasks
         asyncio.create_task(mood_loop(), name="mood_loop")
         asyncio.create_task(db.run_periodic_cleanup(), name="cleanup_loop")
