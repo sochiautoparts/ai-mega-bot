@@ -1,15 +1,16 @@
 """
-Emoji reactions for AI Mega Bot.
+Emoji reactions for AI Mega Bot (Василий).
 
-Picks a context-appropriate emoji for a message and sets it via Telegram's
-setMessageReaction. Falls back gracefully when the bot lacks reaction rights
-or Telegram rate-limits. De-duplicates so we never react twice to the same msg.
+Picks context-appropriate emoji(s) for a message and sets them via Telegram's
+setMessageReaction. Supports up to 3 reactions per message (Telegram limit).
+Falls back gracefully when the bot lacks reaction rights or Telegram rate-limits.
+De-duplicates so we never react twice to the same msg.
 """
 
 import asyncio
 import logging
 import random
-from typing import Optional
+from typing import Optional, List
 
 from aiogram import Bot
 from aiogram.types import ReactionTypeEmoji
@@ -19,7 +20,10 @@ from bot import database as db
 
 logger = logging.getLogger("mega.reactions")
 
-# Emoji pool — chosen by light keyword matching on the message text.
+# Positive emoji pool — used for channel posts (3 reactions per post).
+_POSITIVE_POOL = ["👍", "❤️", "🔥", "😄", "👏", "🎉", "💪", "✨", "👌", "🙌"]
+
+# Single-emoji pools — chosen by light keyword matching on the message text.
 _POSITIVE = ["👍", "❤️", "🔥", "😄", "👏", "🎉", "💪", "✨"]
 _LOVE = ["❤️", "😍", "🥰", "💙", "💜"]
 _FUN = ["😄", "😂", "🤣", "😆", "😎"]
@@ -46,6 +50,38 @@ def _pick_emoji(text: str) -> str:
     return random.choice(_POSITIVE)
 
 
+def _pick_3_positive(text: str) -> List[str]:
+    """Pick 3 different positive emojis for a channel post.
+
+    Tries to match the text mood (love, fun, wow) but always picks from
+    positive pool. Returns exactly 3 unique emojis.
+    """
+    pool = list(_POSITIVE_POOL)  # copy
+    random.shuffle(pool)
+    # If text has love/fun/wow keywords, prioritize matching emojis
+    t = (text or "").lower()
+    preferred = []
+    if any(w in t for w in ["люблю", "обожаю", "супер", "класс", "❤", "🔥"]):
+        preferred = [e for e in ["❤️", "🔥", "👏"] if e in pool]
+    elif any(w in t for w in ["смешн", "лол", "ха", "😂", "шутк"]):
+        preferred = [e for e in ["😄", "🎉", "✨"] if e in pool]
+    elif any(w in t for w in ["ого", "вау", "шок", "жесть", "невероятн"]):
+        preferred = [e for e in ["🔥", "💪", "✨"] if e in pool]
+    # Combine preferred + random from pool, ensure 3 unique
+    result = []
+    for e in preferred:
+        if e not in result:
+            result.append(e)
+        if len(result) >= 3:
+            break
+    for e in pool:
+        if e not in result:
+            result.append(e)
+        if len(result) >= 3:
+            break
+    return result[:3]
+
+
 async def maybe_react(
     bot: Bot,
     chat_id: int,
@@ -53,12 +89,16 @@ async def maybe_react(
     text: str = "",
     prob: Optional[float] = None,
     force: bool = False,
+    count: int = 1,
 ) -> bool:
-    """Set an emoji reaction on a message.
+    """Set emoji reaction(s) on a message.
 
     prob: override reaction probability (default config.REACTION_PROB).
     force: if True, skip the probability check (caller already decided).
-    Returns True if a reaction was actually set.
+    count: number of reactions (1-3). count=3 picks 3 different positive
+           emojis (used for channel posts). count=1 picks a single
+           context-appropriate emoji (used for group messages).
+    Returns True if reaction(s) were actually set.
     """
     if not force:
         p = prob if prob is not None else config.REACTION_PROB
@@ -69,16 +109,21 @@ async def maybe_react(
     if await db.already_reacted(chat_id, message_id):
         return False
 
-    emoji = _pick_emoji(text)
+    # Pick emoji(s) based on count
+    if count >= 3:
+        emojis = _pick_3_positive(text)
+    elif count == 2:
+        emojis = _pick_3_positive(text)[:2]
+    else:
+        emojis = [_pick_emoji(text)]
+
     try:
-        await bot.set_message_reaction(
-            chat_id, message_id, [ReactionTypeEmoji(type="emoji", emoji=emoji)]
-        )
+        reaction_types = [ReactionTypeEmoji(type="emoji", emoji=e) for e in emojis]
+        await bot.set_message_reaction(chat_id, message_id, reaction_types)
         await db.mark_reacted(chat_id, message_id)
         return True
     except Exception as e:
         msg = str(e)
-        # Common benign failures: no reaction rights, chat forbidden, etc.
         if "REACTION_INVALID" in msg or "not enough rights" in msg.lower():
             logger.debug(f"no reaction rights in {chat_id}")
         elif "RetryAfter" in msg:

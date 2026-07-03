@@ -1,13 +1,8 @@
 """
-Channel handler — ONLY sets emoji reactions on channel posts.
+Channel handler — sets 3 POSITIVE emoji reactions on ALL channel posts.
 
-Per requirement: when the bot is added to a channel, it should ONLY put emoji
-reactions (likes) on posts, NOT write comments in the channel. This keeps
-channels clean — the bot is a silent engaged subscriber that reacts but never
-floods with comments.
-
-Reactions use Telegram setMessageReaction (👍❤️🔥😄😮🙏 etc.).
-The bot must be added as a channel admin for reactions to work on posts.
+Per user request: bot puts 3 positive reactions (👍❤️🔥 etc.) on every post.
+NO comments — channels stay clean, bot is a silent engaged subscriber.
 """
 
 import logging
@@ -32,12 +27,13 @@ def _is_politics_or_war(text: str) -> bool:
     return any(w in t for w in triggers)
 
 
-@channel_router.channel_post(F.text | F.photo | F.video | F.animation)
+@channel_router.channel_post(F.text | F.photo | F.video | F.animation | F.sticker | F.voice | F.document | F.video_note)
 async def handle_channel_post(message: Message):
-    """React to channel posts with emoji — NO comments, NO replies.
+    """React to channel posts with 3 POSITIVE emojis — NO comments.
 
-    The bot is a silent engaged subscriber in channels: only puts likes
-    (reactions), never writes comments. This keeps the channel clean.
+    3 reactions per post (👍❤️🔥 / 😄🎉👏 / etc.) — visually engaging.
+    Handles all common post types: text, photo, video, animation, sticker,
+    voice, document, video_note.
     """
     chat: Chat = message.chat
     await db.upsert_channel(chat.id, username=chat.username or "", title=chat.title or "")
@@ -45,10 +41,7 @@ async def handle_channel_post(message: Message):
     if not await db.is_channel_enabled(chat.id):
         return
 
-    # Probability per config — feels natural, not every single post.
-    if random.random() > config.CHANNEL_REACTION_PROB:
-        return
-
+    # Always react (probability check removed — user wants 3 reactions on EVERY post)
     post_text = (message.caption or message.text or "").strip()
     if _is_politics_or_war(post_text):
         return  # skip politics/war posts
@@ -56,9 +49,27 @@ async def handle_channel_post(message: Message):
     try:
         await maybe_react(
             message.bot, chat.id, message.message_id, post_text,
-            prob=1.0, force=True,  # already checked probability
+            prob=1.0, force=True,
+            count=3,  # 3 positive reactions per post
         )
     except Exception as e:
         logger.debug(f"channel reaction failed: {e}")
 
-    # NO comment reply — channels are reaction-only by design.
+
+@channel_router.channel_post()
+async def handle_channel_post_catchall(message: Message):
+    """Catch-all for any other channel post type (polls, dice, etc.)."""
+    chat: Chat = message.chat
+    await db.upsert_channel(chat.id, username=chat.username or "", title=chat.title or "")
+
+    if not await db.is_channel_enabled(chat.id):
+        return
+
+    try:
+        await maybe_react(
+            message.bot, chat.id, message.message_id, "",
+            prob=1.0, force=True,
+            count=3,
+        )
+    except Exception as e:
+        logger.debug(f"channel catch-all reaction failed: {e}")
