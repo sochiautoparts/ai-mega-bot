@@ -141,6 +141,37 @@ async def _log_group_message(message: Message, content: str = "", is_media: bool
     )
 
 
+# Anti-loop: track reply chains per chat to prevent bot↔bot infinite loops.
+_reply_chain_tracker: dict = {}
+_MAX_BOT_REPLIES_PER_THREAD = 3
+_THREAD_TTL = 1800
+
+
+def _is_in_bot_loop(message: Message) -> bool:
+    """Check if we're in a bot↔bot reply loop in this thread."""
+    if not message.reply_to_message:
+        return False
+    chat_id = message.chat.id
+    thread_key = message.reply_to_message.message_id
+    now = time.time()
+    tracker = _reply_chain_tracker.get(chat_id, {})
+    tracker = {k: v for k, v in tracker.items() if now - v[1] < _THREAD_TTL}
+    count, _ = tracker.get(thread_key, (0, now))
+    return count >= _MAX_BOT_REPLIES_PER_THREAD
+
+
+def _track_bot_reply(message: Message) -> None:
+    """Record that the bot replied in this thread (for anti-loop)."""
+    if not message.reply_to_message:
+        return
+    chat_id = message.chat.id
+    thread_key = message.reply_to_message.message_id
+    now = time.time()
+    tracker = _reply_chain_tracker.setdefault(chat_id, {})
+    count, _ = tracker.get(thread_key, (0, now))
+    tracker[thread_key] = (count + 1, now)
+
+
 async def _should_respond(message: Message) -> bool:
     u = message.from_user
     if u and u.id == config.BOT_ID:
@@ -148,9 +179,14 @@ async def _should_respond(message: Message) -> bool:
 
     directed = is_directed_at_bot(message)
     if directed:
+        # Anti-loop: if we've replied N times in this thread, stop (bot↔bot loop)
+        if _is_in_bot_loop(message):
+            logger.info(f"ANTI-LOOP: skipping reply in thread (chat={message.chat.id})")
+            return False
         return True  # ALWAYS respond to direct mentions/replies
 
-    # Channel auto-forwards (news posts): dedup + high probability (was 0.40)
+    # Channel auto-forwards (news/events): comment on ALL of them.
+    # Per user request: bot should comment on every news post and event.
     is_channel_forward = (
         (u and u.id == 777000)
         or (message.sender_chat and message.sender_chat.type == "channel")
@@ -159,18 +195,27 @@ async def _should_respond(message: Message) -> bool:
     if is_channel_forward:
         if _should_skip_duplicate(message.text or "", message.chat.id):
             return False
-        return random.random() < 0.70  # was 0.40 — bot comments on 70% of channel forwards
+        return True  # 100% — comment on ALL news/events
 
-    # Reply in an existing discussion thread → almost always join
+    # Reply in an existing discussion thread → join discussions actively
     if message.reply_to_message and message.reply_to_message.from_user:
         if message.reply_to_message.from_user.id != config.BOT_ID:
-            return random.random() < 0.95
+            # If the message is news/event, always respond
+            text = (message.text or "").lower()
+            if _is_event_or_news(text):
+                return True
+            return random.random() < 0.70  # 70% — joins most discussions
 
-    # Other bots' messages: very high proactive chance (bot chats with bots)
+    # Other bots' messages: chat with bots but avoid loops
     if u and u.is_bot:
-        return random.random() < 0.80
+        if _is_in_bot_loop(message):
+            return False
+        return random.random() < 0.50  # 50% — chats with bots sometimes
 
-    # Regular group messages: high proactive probability
+    # Regular group messages: if news/event, always respond
+    text = (message.text or "").lower()
+    if _is_event_or_news(text):
+        return True
     return random.random() < config.GROUP_PROACTIVE_PROB
 
 
@@ -412,6 +457,7 @@ async def handle_group_photo(message: Message):
         return
     await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
     await _log_group_message(message, content=out, is_media=False, is_bot=True)
+    _track_bot_reply(message)
 
 
 @group_router.message(F.voice)
@@ -467,6 +513,7 @@ async def handle_group_voice(message: Message):
         out = "Услышал, но чет завис 🙈"
     await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
     await _log_group_message(message, content=out, is_media=False, is_bot=True)
+    _track_bot_reply(message)
 
 
 @group_router.message(F.sticker)
@@ -501,6 +548,7 @@ async def handle_group_sticker(message: Message):
         if out:
             await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
             await _log_group_message(message, content=out, is_media=False, is_bot=True)
+    _track_bot_reply(message)
 
 
 @group_router.message(F.animation)
@@ -534,6 +582,7 @@ async def handle_group_animation(message: Message):
         if out:
             await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
             await _log_group_message(message, content=out, is_media=False, is_bot=True)
+    _track_bot_reply(message)
 
 
 @group_router.message(F.text)
@@ -587,6 +636,7 @@ async def handle_group_text(message: Message):
     logger.info(f"GROUP REPLY chat={message.chat.id} len={len(out)}")
     await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
     await _log_group_message(message, content=out, is_media=False, is_bot=True)
+    _track_bot_reply(message)
 
     # Extract & store long-term facts about the user (globally + per-group)
     try:
@@ -665,6 +715,7 @@ async def handle_group_other_media(message: Message):
         if out:
             await safe_reply(message.bot, message, out, always_reply=True, priority=directed)
             await _log_group_message(message, content=out, is_media=False, is_bot=True)
+    _track_bot_reply(message)
 
 
 # ── Catch-all: dice, polls, contacts, locations, and any other type ─────────

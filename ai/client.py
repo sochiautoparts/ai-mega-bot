@@ -300,29 +300,29 @@ async def chat(
             short_persona = (
                 "Ты Василий, парень из Сочи. Мужской род всегда. "
                 "Отвечай живо, кратко (1-3 предложения), как знакомый в переписке. "
-                "По-русски. Без выдуманных фактов."
+                "По-русски. Без выдуманных фактов. Не начинай с имени."
             )
-            embedded = f"{short_persona}\n\nВопрос: {prompt}\n\nВасилий:"
+            embedded = f"{short_persona}\n\nВопрос: {prompt}\n\nОтвет:"
             out = await _call_pollinations_get(embedded, timeout=12.0)
             if out:
                 _stats["success"] += 1
                 _stats["pollinations_backup"] += 1
                 logger.info(f"AI fast=pollinations-GET ({_t.time()-t0:.1f}s) len={len(out)}")
-                return out
+                return _strip_name_prefix(out)
         # POST path (handles system role, dialog history, long prompts)
         out = await _call_pollinations_direct(messages, max_tokens, timeout=30.0)
         if out:
             _stats["success"] += 1
             _stats["pollinations_backup"] += 1
             logger.info(f"AI fast=pollinations-POST ({_t.time()-t0:.1f}s) len={len(out)}")
-            return out
+            return _strip_name_prefix(out)
         # OpenClaw backup (shorter timeout — we already spent up to 30s)
         out = await _call_openclaw(messages, max_tokens, temperature, timeout=15.0)
         if out:
             _stats["success"] += 1
             _stats["openclaw_ok"] += 1
             logger.info(f"AI fast=openclaw-backup ({_t.time()-t0:.1f}s) len={len(out)}")
-            return out
+            return _strip_name_prefix(out)
     else:
         # Quality path: OpenClaw first (best model), Pollinations backup
         out = await _call_openclaw(messages, max_tokens, temperature, timeout=25.0)
@@ -330,7 +330,7 @@ async def chat(
             _stats["success"] += 1
             _stats["openclaw_ok"] += 1
             logger.info(f"AI openclaw ({_t.time()-t0:.1f}s) len={len(out)}")
-            return out
+            return _strip_name_prefix(out)
         # Pollinations direct backup
         logger.info("OpenClaw empty → trying Pollinations direct backup")
         out = await _call_pollinations_direct(messages, max_tokens, timeout=20.0)
@@ -338,7 +338,7 @@ async def chat(
             _stats["success"] += 1
             _stats["pollinations_backup"] += 1
             logger.info(f"AI pollinations-backup ({_t.time()-t0:.1f}s) len={len(out)}")
-            return out
+            return _strip_name_prefix(out)
 
     # Static fallback (only if allowed)
     _stats["fail"] += 1
@@ -369,7 +369,17 @@ async def comment(prompt: str, extra_context: str = "", mood: str = "",
     )
     if not out:
         return ""
-    return out
+    return _strip_name_prefix(out)
+
+
+def _strip_name_prefix(text: str) -> str:
+    """Remove 'Василий:' or 'Ответ:' prefix from AI responses."""
+    if not text:
+        return text
+    import re
+    stripped = re.sub(r'^\s*Василий\s*[:,\-—]\s*', '', text, flags=re.IGNORECASE)
+    stripped = re.sub(r'^\s*Ответ\s*[:,\-—]\s*', '', stripped, flags=re.IGNORECASE)
+    return stripped
 
 
 async def vision(prompt: str, image_data_uri: str, system: str = "",
