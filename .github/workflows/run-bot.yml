@@ -207,15 +207,14 @@ jobs:
           if [ -f data/bot.db ]; then
             git config user.name "AI Mega Bot"
             git config user.email "mega-bot@users.noreply.github.com"
-            # Fetch latest main to avoid push conflicts (detached HEAD in Actions)
+            # Fetch latest main FIRST — so we don't overwrite newer code commits
             git fetch origin main || true
-            # Commit the DB update on top of current HEAD
+            # Create a temp branch from latest remote main, add DB, push
+            git checkout -b db-update origin/main 2>/dev/null || git checkout -B db-update origin/main
             git add -f data/bot.db || true
             git diff --staged --quiet || git commit -m "db: update $(date +%Y-%m-%d_%H:%M)" || true
-            # Force-push to main (DB is the only file we commit; safe to force)
-            # Using HEAD:main because we're in detached HEAD state
-            git push origin HEAD:main --force-with-lease 2>&1 || \
-              git push origin HEAD:main 2>&1 || true
+            # Regular push (NOT force) — if conflict (someone pushed code), skip
+            git push origin db-update:main 2>&1 || echo "DB push skipped (newer commits on main — this is OK, DB cached via actions/cache)"
           fi
 
       - name: Re-dispatch workflow for 24/7
