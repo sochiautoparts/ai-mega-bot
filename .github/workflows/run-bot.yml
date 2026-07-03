@@ -30,11 +30,10 @@ name: Run AI Mega Bot 24/7 (OpenClaw)
 
 on:
   schedule:
-    - cron: '0 0 * * *'      # 03:00 Moscow
-    - cron: '0 5 * * *'      # 08:00 Moscow
-    - cron: '0 10 * * *'     # 13:00 Moscow
-    - cron: '0 15 * * *'     # 18:00 Moscow
-    - cron: '0 20 * * *'     # 23:00 Moscow
+    # Every 2 hours — reliable fallback if re-dispatch fails.
+    # Each run lasts ~5h45m (timeout 345min), so 2h schedule guarantees
+    # a new run starts before the previous one ends.
+    - cron: '0 */2 * * *'    # every 2h (00:00, 02:00, 04:00, ... UTC)
   workflow_dispatch:
   push:
     branches: [main]
@@ -208,13 +207,15 @@ jobs:
           if [ -f data/bot.db ]; then
             git config user.name "AI Mega Bot"
             git config user.email "mega-bot@users.noreply.github.com"
+            # Fetch latest main to avoid push conflicts (detached HEAD in Actions)
+            git fetch origin main || true
+            # Commit the DB update on top of current HEAD
             git add -f data/bot.db || true
             git diff --staged --quiet || git commit -m "db: update $(date +%Y-%m-%d_%H:%M)" || true
-            git add -A || true
-            git stash --include-untracked || true
-            git pull --rebase origin main || true
-            git stash pop || true
-            git push || true
+            # Force-push to main (DB is the only file we commit; safe to force)
+            # Using HEAD:main because we're in detached HEAD state
+            git push origin HEAD:main --force-with-lease 2>&1 || \
+              git push origin HEAD:main 2>&1 || true
           fi
 
       - name: Re-dispatch workflow for 24/7
@@ -225,19 +226,24 @@ jobs:
           echo "=== Re-dispatching workflow for 24/7 ==="
           REPO=${{ github.repository }}
           sleep 10
-          for i in 1 2 3; do
+          SUCCESS=0
+          for i in 1 2 3 4 5; do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
               -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$REPO/actions/workflows/run-bot.yml/dispatches" \
               -d '{"ref":"main"}')
             if [ "$HTTP_CODE" = "204" ]; then
-              echo "Workflow re-dispatched successfully (attempt $i)"
+              echo "✅ Workflow re-dispatched successfully (attempt $i)"
+              SUCCESS=1
               break
             fi
-            echo "Re-dispatch attempt $i failed (HTTP $HTTP_CODE), retrying in 10s..."
-            sleep 10
+            echo "❌ Re-dispatch attempt $i failed (HTTP $HTTP_CODE), retrying in 15s..."
+            sleep 15
           done
+          if [ $SUCCESS -eq 0 ]; then
+            echo "⚠️ All re-dispatch attempts failed. Relying on cron schedule (5x daily) as fallback."
+          fi
 
       - name: Cleanup
         if: always()
