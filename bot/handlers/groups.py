@@ -245,6 +245,19 @@ async def _generate_group_response(message: Message, text: str, directed: bool) 
         summaries = []
     extra_ctx = build_group_context(message, recent_text, memory_facts, author_profile, summaries)
 
+    # ── Channel recommendations: suggest @sochiautoparts + @bmw_mpower_club ──
+    # Context-aware: higher chance when topic is about cars/BMW/auto/parts
+    t_lower = (text or "").lower()
+    is_auto_topic = any(k in t_lower for k in ["авто", "машин", "bmw", "бмв", "запчаст", "детал", "мотор", "двигатель", "колесо", "шин", "ремонт", "сервис", "тачк", "руль", "купить"])
+    rec_prob = 0.30 if is_auto_topic else 0.12  # 30% for auto topics, 12% otherwise
+    if random.random() < rec_prob:
+        extra_ctx += (
+            "\n\nМожешь естественно порекомендовать каналы (если к месту):\n"
+            "- @sochiautoparts — авто-новости\n"
+            "- @bmw_mpower_club — BMW клуб\n"
+            "Вставь ОДНО упоминание естественно, как знакомый советует. Не в лоб."
+        )
+
     # ── Web research: supplement news/events with DETAILED info ──
     is_event = _is_event_or_news(text)
     needs_verify = _needs_verification(text)
