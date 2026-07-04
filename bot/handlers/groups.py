@@ -38,6 +38,7 @@ from bot.context import (
     user_descriptor, chat_descriptor, is_directed_at_bot,
     strip_mention, recent_messages_to_text, build_group_context,
     build_user_profile, extract_and_store_facts,
+    is_known_bot, get_bot_description,
 )
 from bot.mood import update_mood_from_message, current_mood_descriptor
 from bot.partners import partner_manager
@@ -144,7 +145,7 @@ async def _log_group_message(message: Message, content: str = "", is_media: bool
 
 # Anti-loop: track reply chains per chat to prevent bot↔bot infinite loops.
 _reply_chain_tracker: dict = {}
-_MAX_BOT_REPLIES_PER_THREAD = 3
+_MAX_BOT_REPLIES_PER_THREAD = 2
 _THREAD_TTL = 1800
 
 

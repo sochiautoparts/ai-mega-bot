@@ -16,6 +16,30 @@ from typing import List, Optional
 from aiogram.types import Message
 
 from bot.config import config
+
+# Known bot siblings — bots recognize each other and don't keep "introducing" themselves
+KNOWN_BOTS = {
+    "asiaexp_bot": "Ася — автоэксперт, @sochiautoparts",
+    "asluba_bot": "Люба — копирайтер из Сочи",
+    "asnastya_bot": "Настя — блогер, астрология",
+    "asmasha_bot": "Маша — BMW M-эксперт, @bmw_mpower_club",
+    "asdasha_bot": "Даша — дизайнер мебели, Абакан",
+    "aimega_bot": "Василий — парень из Сочи",
+}
+
+
+def is_known_bot(username: str) -> bool:
+    """Check if a username belongs to a known sibling bot."""
+    if not username:
+        return False
+    return username.lstrip("@").lower() in KNOWN_BOTS
+
+
+def get_bot_description(username: str) -> str:
+    """Get description of a known bot, or empty string."""
+    if not username:
+        return ""
+    return KNOWN_BOTS.get(username.lstrip("@").lower(), "")
 from bot import database as db
 
 
@@ -114,6 +138,12 @@ def build_group_context(message: Message, recent_text: str, memory_facts: List[s
     """Assemble full context for a group AI prompt.
 
     author_profile: output of build_user_profile() for the message author.
+    summaries: recent conversation summaries.
+    Includes bot recognition: if author is a known sibling bot, notes it.
+    """
+    """Assemble full context for a group AI prompt.
+
+    author_profile: output of build_user_profile() for the message author.
     summaries: recent conversation summaries (from chat_summaries table) —
                lets Василий reference what was discussed earlier in the chat.
     """
@@ -127,7 +157,13 @@ def build_group_context(message: Message, recent_text: str, memory_facts: List[s
     if author_profile:
         parts.append(f"Кто пишет:\n{author_profile}")
     else:
-        parts.append(f"Пишет: {who}.")
+        # Check if it's a known sibling bot
+        u = message.from_user
+        if u and u.username and is_known_bot(u.username):
+            bot_desc = get_bot_description(u.username)
+            parts.append(f"Пишет: {who} (это {bot_desc} — твоя знакомая, не знакомься заново).")
+        else:
+            parts.append(f"Пишет: {who}.")
     # Conversation summaries — what was discussed recently (longer-term memory)
     if summaries:
         sum_lines = []
