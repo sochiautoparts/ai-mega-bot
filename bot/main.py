@@ -206,7 +206,7 @@ class MegaBot:
         await self._notify_owner()
 
         try:
-            await self.bot.delete_webhook(drop_pending_updates=False)
+            await self.bot.delete_webhook(drop_pending_updates=True)
         except Exception as e:
             logger.warning(f"delete_webhook: {e}")
 
