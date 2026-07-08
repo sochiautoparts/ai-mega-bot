@@ -21,7 +21,7 @@ from bot import database as db
 logger = logging.getLogger("mega.reactions")
 
 # Positive emoji pool — used for channel posts (3 reactions per post).
-_POSITIVE_POOL = ["👍", "❤", "🔥", "😄", "👏", "🎉", "💪", "✨", "👏", "🎉"]
+_POSITIVE_POOL = ["👍", "❤", "🔥", "😄", "👏", "🎉", "💪", "✨", "🤔", "👀"]
 
 # Single-emoji pools — chosen by light keyword matching on the message text.
 _POSITIVE = ["👍", "❤", "🔥", "😄", "👏", "🎉", "💪", "✨"]

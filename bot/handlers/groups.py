@@ -426,7 +426,7 @@ async def handle_group_photo(message: Message):
         return
     caption = extract_caption(message)
     await _log_group_message(message, content=caption, is_media=True, media_caption=caption)
-    await update_mood_from_message(caption)
+    update_mood_from_message(caption)
 
     if _is_politics_or_war(caption):
         return
@@ -637,7 +637,7 @@ async def handle_group_text(message: Message):
     )
 
     await _log_group_message(message, content=text, is_media=False, is_bot=False)
-    await update_mood_from_message(text)
+    update_mood_from_message(text)
 
     # Set a reaction on some messages the bot reads (alive engagement)
     asyncio.create_task(maybe_react(message.bot, message.chat.id, message.message_id, text))
