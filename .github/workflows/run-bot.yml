@@ -59,7 +59,7 @@ jobs:
     steps:
       - name: Cancel conflicting runs and wait
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "=== Checking for other running bot instances ==="
           CURRENT_RUN=${{ github.run_id }}
@@ -148,7 +148,7 @@ jobs:
           BOT_ID: ${{ secrets.BOT_ID }}
           OWNER_ID: ${{ secrets.OWNER_ID }}
           ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
-          GH_PAT_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          GH_PAT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           OPENCLAW_PORT: "18789"
           # ── AI Providers (auto-enabled when key is set) ──
@@ -220,7 +220,7 @@ jobs:
       - name: Re-dispatch workflow for 24/7
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "=== Re-dispatching workflow for 24/7 ==="
           REPO=${{ github.repository }}
