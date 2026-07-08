@@ -35,14 +35,9 @@ on:
     # a new run starts before the previous one ends.
     - cron: '0 */4 * * *'    # every 2h (00:00, 02:00, 04:00, ... UTC)
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-
 concurrency:
   group: mega-bot-single
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
