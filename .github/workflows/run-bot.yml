@@ -33,7 +33,7 @@ on:
     # Every 2 hours — reliable fallback if re-dispatch fails.
     # Each run lasts ~5h45m (timeout 345min), so 2h schedule guarantees
     # a new run starts before the previous one ends.
-    - cron: '0 */2 * * *'    # every 2h (00:00, 02:00, 04:00, ... UTC)
+    - cron: '0 */4 * * *'    # every 2h (00:00, 02:00, 04:00, ... UTC)
   workflow_dispatch:
   push:
     branches: [main]
@@ -42,7 +42,7 @@ on:
 
 concurrency:
   group: mega-bot-single
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
