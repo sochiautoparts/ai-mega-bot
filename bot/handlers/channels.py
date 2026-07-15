@@ -41,40 +41,92 @@ def _is_politics_or_war(text: str) -> bool:
 
 
 async def _post_comment(message: Message, post_text: str):
-    """Post a short comment on channel post (reply creates comment in discussion group).
+    """Post a comment in the channel's DISCUSSION GROUP (not in the channel itself).
+    
+    Telegram channels have a linked discussion group. To comment on a channel post:
+    1. Get the linked chat (discussion group) via bot.get_chat()
+    2. Send message to the discussion group as reply to the channel post
+    
     20% — ready-made quick comment
     10% — AI-generated contextual comment
     70% — no comment (just reactions)
     """
     roll = random.random()
     
+    # Determine comment text
+    comment_text = None
     if roll < 0.20:
-        # Quick ready-made comment
-        comment = random.choice(_QUICK_COMMENTS)
-        try:
-            await asyncio.sleep(random.uniform(5, 15))  # natural delay
-            await message.reply(comment, disable_web_page_preview=True)
-            logger.info(f"  Comment posted (quick): {comment}")
-        except Exception as e:
-            logger.debug(f"  Quick comment failed: {e}")
-    
+        comment_text = random.choice(_QUICK_COMMENTS)
     elif roll < 0.30:
-        # AI-generated contextual comment (1-2 sentences)
         try:
             from ai import client as ai_client
             from bot.persona import COMMENT_PROMPT
             prompt = f"Коротко прокомментируй этот пост канала (1-2 предложения, живо, с эмодзи). Текст поста: {post_text[:300]}"
-            comment = await ai_client.chat(
+            comment_text = await ai_client.chat(
                 prompt, system=COMMENT_PROMPT,
                 max_tokens=100, temperature=0.9, allow_static_fallback=False, fast=True
             )
-            if comment and len(comment.strip()) > 5:
-                comment = comment.strip()[:300]
-                await asyncio.sleep(random.uniform(5, 15))  # natural delay
-                await message.reply(comment, disable_web_page_preview=True)
-                logger.info(f"  Comment posted (AI): {comment[:50]}")
+            if comment_text and len(comment_text.strip()) > 5:
+                comment_text = comment_text.strip()[:300]
+            else:
+                comment_text = None
         except Exception as e:
             logger.debug(f"  AI comment failed: {e}")
+            comment_text = None
+    
+    if not comment_text:
+        return
+    
+    # Post comment to discussion group (NOT to channel)
+    try:
+        await asyncio.sleep(random.uniform(5, 15))  # natural delay
+        
+        # Get the linked discussion group for this channel
+        chat = await message.bot.get_chat(message.chat.id)
+        linked_chat_id = None
+        
+        # Try to get linked chat
+        try:
+            # For channels with discussion group
+            full_chat = await message.bot.get_chat(message.chat.id)
+            if hasattr(full_chat, 'linked_chat_id') and full_chat.linked_chat_id:
+                linked_chat_id = full_chat.linked_chat_id
+        except:
+            pass
+        
+        if linked_chat_id:
+            # Send comment to discussion group as reply to forwarded channel post
+            # The channel post is forwarded to discussion group — find it
+            try:
+                # Send directly to discussion group — Telegram auto-links it as comment
+                await message.bot.send_message(
+                    linked_chat_id,
+                    comment_text,
+                    reply_to_message_id=message.message_id,
+                    disable_web_page_preview=True
+                )
+                logger.info(f"  Comment posted to discussion group: {comment_text[:50]}")
+            except Exception as e:
+                # Fallback: send without reply
+                try:
+                    await message.bot.send_message(
+                        linked_chat_id,
+                        comment_text,
+                        disable_web_page_preview=True
+                    )
+                    logger.info(f"  Comment posted to discussion (no reply): {comment_text[:50]}")
+                except Exception as e2:
+                    logger.debug(f"  Comment send failed: {e2}")
+        else:
+            # No discussion group — try message.reply() as fallback
+            # This works if the bot is admin in the channel with post rights
+            try:
+                await message.reply(comment_text, disable_web_page_preview=True)
+                logger.info(f"  Comment posted (reply fallback): {comment_text[:50]}")
+            except Exception as e:
+                logger.debug(f"  Comment reply failed: {e}")
+    except Exception as e:
+        logger.debug(f"  Comment failed: {e}")
 
 
 @channel_router.channel_post(F.text | F.photo | F.video | F.animation | F.sticker | F.voice | F.document | F.video_note)
