@@ -100,13 +100,19 @@ QUICK_COMMENTS = [
     "Спасибо, полезно 👍", "Зачёт 🔥", "Браво!", "Толково",
 ]
 
-COMMENT_PROB = 0.45
+# Каждый бот комментирует пост с этой вероятностью.
+# 0.45 → в среднем 4-5 ботов из 9 комментируют пост (некоторые посты без коммента).
+# 0.75 → в среднем 6-7 ботов из 9 комментируют пост (почти все посты с комментом).
+COMMENT_PROB = float(os.getenv("SWARM_COMMENT_PROB", "0.75"))
 
 # Короткие задержки для single-shot (cron 2мин даёт естественный spacing)
 REACT_DELAY_MIN, REACT_DELAY_MAX = 0.2, 1.0
 COMMENT_DELAY_MIN, COMMENT_DELAY_MAX = 0.5, 2.0
 
-STALE_WINDOW_SEC = int(os.getenv("SWARM_STALE_WINDOW", "7200"))
+# Окно актуальности поста. Если пост старше — пропускается.
+# 7200 (2ч) — слишком коротко: если swarm упал на >2ч, посты потеряны навсегда.
+# 86400 (24ч) — переживает короткие падения, догоняет пропущенное.
+STALE_WINDOW_SEC = int(os.getenv("SWARM_STALE_WINDOW", "86400"))
 
 # Long-poll timeout для getUpdates.
 # Single-shot (sandbox): 5 сек — быстрый возврат, запуск завершается за 10-30с.
