@@ -29,3 +29,11 @@ logs/
 # ── OS ──
 .DS_Store
 Thumbs.db
+
+# ── Reaction Swarm runtime state ──
+reaction-swarm/.commented.json
+reaction-swarm/.offsets.json
+reaction-swarm/.heartbeat
+reaction-swarm/.run.lock
+reaction-swarm/swarm.log
+reaction-swarm/*.tmp

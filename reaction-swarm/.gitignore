@@ -1,0 +1,32 @@
+# Чувствительные данные — НИКОГДА не коммитить!
+.env
+.env.local
+.env.*.local
+
+# Логи
+*.log
+swarm.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Runtime state (swarm v3)
+.commented.json
+.offsets.json
+.heartbeat
+.run.lock
