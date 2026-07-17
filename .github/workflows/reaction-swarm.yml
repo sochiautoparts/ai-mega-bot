@@ -5,18 +5,25 @@ name: Reaction Swarm 24/7 (10 bots)
 # на новые посты в каналах (sochiautoparts, bmw_mpower_club, chasnastya,
 # abakan_mebel). Работает 24/7 параллельно с AI Mega Bot ("Василий").
 #
-# АРХИТЕКТУРА (как у run-bot.yml):
-#   - python3 swarm.py --daemon (long-polling, real-time 1-2 сек задержка)
-#   - schedule "0 */4 * * *" (каждые 4 часа) — fallback если re-dispatch упадёт
-#   - timeout-minutes: 345 (5ч 45м) — overlap 1ч 45м для надёжности
-#   - cancel-in-progress: true — новый запуск убивает старый (нет 409 Conflict)
-#   - auto-restart loop внутри run step — переживает любой crash
-#   - re-dispatch в конце — 24/7 без schedule
+# АРХИТЕКТУРА (v2 — stable, no cancel loop, no PAT dependency):
+#   - schedule "0,30 * * * *" (каждые 30 мин) — 48 запусков в сутки
+#   - timeout-minutes: 25 (меньше 30, нет overlap)
+#   - cancel-in-progress: true — новый run убивает старый (5-10 сек gap)
+#   - NO re-dispatch — убран, т.к. GH_PAT_TOKEN был невалиден (401)
+#     Schedule каждые 30 мин надёжнее и не требует secrets
+#   - auto-restart loop внутри run step — переживает crash swarm.py
+#   - swarm.py использует flock (.run.lock) — нет дублей инстансов
+#   - swarm.py использует deleteWebhook при init — быстрее освобождает getUpdates
+#
+# ЗАДЕРЖКА ДО ПОСТА:
+#   - Внутри 25-мин run: 1-2 сек (long-polling real-time)
+#   - Между runs: 5-10 сек (cancel transition + checkout)
+#   - Worst case: ~30 сек (если schedule задержан GitHub)
 # ════════════════════════════════════════════════════════════════════════════
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0,30 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -24,7 +31,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
   actions: write
 
 env:
@@ -33,37 +40,9 @@ env:
 jobs:
   run-swarm:
     runs-on: ubuntu-latest
-    timeout-minutes: 345
+    timeout-minutes: 25
 
     steps:
-      - name: Cancel conflicting swarm runs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set +e
-          echo "=== Checking for other running swarm instances ==="
-          CURRENT_RUN=${{ github.run_id }}
-          REPO=${{ github.repository }}
-          # Get all in_progress + queued runs, filter to THIS workflow only
-          for status in in_progress queued; do
-            curl -s -H "Authorization: token $GH_TOKEN" \
-              "https://api.github.com/repos/$REPO/actions/runs?status=$status&per_page=20" \
-              | jq -r --arg cur "$CURRENT_RUN" '
-                .workflow_runs[]
-                | select(.id != ($cur | tonumber))
-                | select(.name == "Reaction Swarm 24/7 (10 bots)")
-                | .id
-              ' | while read run_id; do
-                echo "Cancelling $status swarm run: $run_id"
-                curl -s -X POST -H "Authorization: token $GH_TOKEN" \
-                  -H "Accept: application/vnd.github.v3+json" \
-                  "https://api.github.com/repos/$REPO/actions/runs/$run_id/cancel" || true
-              done
-          done
-          echo "Waiting 30s for old swarm to stop (Telegram getUpdates session release)..."
-          sleep 30
-          echo "=== Ready to start ==="
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -86,7 +65,7 @@ jobs:
           find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
-      - name: Run Reaction Swarm with unlimited auto-restart
+      - name: Run Reaction Swarm with auto-restart
         env:
           BOT_TOKEN_ALLSTARSPAY: ${{ secrets.BOT_TOKEN_ALLSTARSPAY }}
           BOT_TOKEN_TIRES24:     ${{ secrets.BOT_TOKEN_TIRES24 }}
@@ -100,7 +79,8 @@ jobs:
           BOT_TOKEN_LUKOILOIL:   ${{ secrets.BOT_TOKEN_LUKOILOIL }}
           SWARM_CHANNELS:        "sochiautoparts,bmw_mpower_club,chasnastya,abakan_mebel"
           SWARM_LONG_POLL_TIMEOUT: "30"
-          SWARM_STALE_WINDOW:     "7200"
+          SWARM_STALE_WINDOW:     "86400"
+          SWARM_COMMENT_PROB:     "0.75"
           SWARM_DISABLED_BOTS:    "allstarspay"
         run: |
           set +e
@@ -108,59 +88,35 @@ jobs:
           echo "=== Starting Reaction Swarm (daemon mode) ==="
           echo "Channels: $SWARM_CHANNELS"
           echo "Long-poll timeout: ${SWARM_LONG_POLL_TIMEOUT}s"
+          echo "Stale window: ${SWARM_STALE_WINDOW}s (24h)"
+          echo "Comment probability: ${SWARM_COMMENT_PROB}"
           echo "Disabled: $SWARM_DISABLED_BOTS"
-          echo "=== Launching with UNLIMITED auto-restart ==="
+          echo "=== Launching with auto-restart (max 25 min) ==="
           RETRY=0
           LAST_START=0
           while true; do
             RETRY=$((RETRY+1))
             echo "--- Attempt $RETRY (started $(date -u +%H:%M:%SZ)) ---"
             NOW=$(date +%s)
-            if [ $((NOW - LAST_START)) -gt 600 ]; then
+            if [ $((NOW - LAST_START)) -gt 300 ]; then
               RETRY=1
             fi
             LAST_START=$NOW
             python3 -u swarm.py --daemon
             EXIT_CODE=$?
             echo "Swarm exited with code $EXIT_CODE (attempt $RETRY) at $(date -u +%H:%M:%SZ)"
+            # Exponential backoff: 5s, 10s, 15s, 30s
             if [ $EXIT_CODE -eq 0 ]; then
               sleep 5
-            elif [ $RETRY -le 3 ]; then
+            elif [ $RETRY -le 2 ]; then
               sleep 10
-            elif [ $RETRY -le 6 ]; then
+            elif [ $RETRY -le 4 ]; then
               sleep 15
             else
               sleep 30
             fi
           done
 
-      - name: Re-dispatch workflow for 24/7
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_TOKEN }}
-        run: |
-          echo "=== Re-dispatching Reaction Swarm for 24/7 ==="
-          REPO=${{ github.repository }}
-          sleep 10
-          SUCCESS=0
-          for i in 1 2 3 4 5; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-              -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$REPO/actions/workflows/reaction-swarm.yml/dispatches" \
-              -d '{"ref":"main"}')
-            if [ "$HTTP_CODE" = "204" ]; then
-              echo "OK Workflow re-dispatched successfully (attempt $i)"
-              SUCCESS=1
-              break
-            fi
-            echo "FAIL Re-dispatch attempt $i failed (HTTP $HTTP_CODE), retrying in 15s..."
-            sleep 15
-          done
-          if [ $SUCCESS -eq 0 ]; then
-            echo "WARN All re-dispatch attempts failed. Relying on cron schedule (6x daily) as fallback."
-          fi
-
       - name: Cleanup
         if: always()
-        run: echo "=== Swarm session ended ==="
+        run: echo "=== Swarm session ended at $(date -u +%H:%M:%SZ) ==="
