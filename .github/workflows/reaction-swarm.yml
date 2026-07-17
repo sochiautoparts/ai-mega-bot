@@ -12,22 +12,10 @@ name: Reaction Swarm 24/7 (10 bots)
 #   - cancel-in-progress: true — новый запуск убивает старый (нет 409 Conflict)
 #   - auto-restart loop внутри run step — переживает любой crash
 #   - re-dispatch в конце — 24/7 без schedule
-#
-# SECRETS (уже добавлены в repo Settings → Secrets):
-#   BOT_TOKEN_ALLSTARSPAY, BOT_TOKEN_TIRES24, BOT_TOKEN_ROSSKOZAP,
-#   BOT_TOKEN_ACTIVGLOBAL, BOT_TOKEN_RECARS, BOT_TOKEN_BILET_AVIA,
-#   BOT_TOKEN_KOLESPRO, BOT_TOKEN_AUTOKOD, BOT_TOKEN_ZAPONLINE,
-#   BOT_TOKEN_LUKOILOIL
-#
-# ОТКЛЮЧЕННЫЕ БОТЫ:
-#   allstarspay — внешний инстанс использует этот токен (409 Conflict).
-#   Чтобы включить обратно — убрать из SWARM_DISABLED_BOTS ниже.
 # ════════════════════════════════════════════════════════════════════════════
 
 on:
   schedule:
-    # Каждые 4 часа (00:00, 04:00, 08:00, 12:00, 16:00, 20:00 UTC)
-    # Fallback если re-dispatch упадёт. Каждый запуск 5ч 45м = overlap.
     - cron: '0 */4 * * *'
   workflow_dispatch:
 
@@ -45,36 +33,32 @@ env:
 jobs:
   run-swarm:
     runs-on: ubuntu-latest
-    timeout-minutes: 345  # ~5h45m, overlap 1h45m со schedule 4h
+    timeout-minutes: 345
 
     steps:
-      - name: Cancel conflicting runs and wait
+      - name: Cancel conflicting swarm runs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set +e
           echo "=== Checking for other running swarm instances ==="
           CURRENT_RUN=${{ github.run_id }}
           REPO=${{ github.repository }}
+          # Get all in_progress + queued runs, filter to THIS workflow only
           for status in in_progress queued; do
-            RUNS=$(curl -s -H "Authorization: token $GH_TOKEN" \
-              "https://api.github.com/repos/$REPO/actions/runs?status=$status&per_page=10" \
-              | python3 -c '
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              # Only cancel runs of THIS workflow (reaction-swarm.yml),
-              # don't touch run-bot.yml (AI Mega Bot — "Василий")
-              for r in d.get("workflow_runs", []):
-                  if r["id"] != int(sys.argv[1]) and "Reaction Swarm" in r.get("name",""):
-                      print(r["id"])
-          except: pass
-          ' "$CURRENT_RUN")
-            for run_id in $RUNS; do
-              echo "Cancelling $status swarm run: $run_id"
-              curl -s -X POST -H "Authorization: token $GH_TOKEN" \
-                -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/$REPO/actions/runs/$run_id/cancel" || true
-            done
+            curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/actions/runs?status=$status&per_page=20" \
+              | jq -r --arg cur "$CURRENT_RUN" '
+                .workflow_runs[]
+                | select(.id != ($cur | tonumber))
+                | select(.name == "Reaction Swarm 24/7 (10 bots)")
+                | .id
+              ' | while read run_id; do
+                echo "Cancelling $status swarm run: $run_id"
+                curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+                  -H "Accept: application/vnd.github.v3+json" \
+                  "https://api.github.com/repos/$REPO/actions/runs/$run_id/cancel" || true
+              done
           done
           echo "Waiting 30s for old swarm to stop (Telegram getUpdates session release)..."
           sleep 30
@@ -104,7 +88,6 @@ jobs:
 
       - name: Run Reaction Swarm with unlimited auto-restart
         env:
-          # 10 bot tokens
           BOT_TOKEN_ALLSTARSPAY: ${{ secrets.BOT_TOKEN_ALLSTARSPAY }}
           BOT_TOKEN_TIRES24:     ${{ secrets.BOT_TOKEN_TIRES24 }}
           BOT_TOKEN_ROSSKOZAP:   ${{ secrets.BOT_TOKEN_ROSSKOZAP }}
@@ -115,18 +98,14 @@ jobs:
           BOT_TOKEN_AUTOKOD:     ${{ secrets.BOT_TOKEN_AUTOKOD }}
           BOT_TOKEN_ZAPONLINE:   ${{ secrets.BOT_TOKEN_ZAPONLINE }}
           BOT_TOKEN_LUKOILOIL:   ${{ secrets.BOT_TOKEN_LUKOILOIL }}
-          # Channel filter
           SWARM_CHANNELS:        "sochiautoparts,bmw_mpower_club,chasnastya,abakan_mebel"
-          # Long-poll timeout: 30 sec — real-time, экономит rate limit
           SWARM_LONG_POLL_TIMEOUT: "30"
-          # Skip window: 2h (catch up posts after restart)
           SWARM_STALE_WINDOW:     "7200"
-          # DISABLED bots (409 Conflict from external instance)
           SWARM_DISABLED_BOTS:    "allstarspay"
         run: |
-          set +e  # disable exit-on-error so retry loop survives any crash
+          set +e
           cd reaction-swarm
-          echo "=== Starting Reaction Swarm (10 bots, daemon mode) ==="
+          echo "=== Starting Reaction Swarm (daemon mode) ==="
           echo "Channels: $SWARM_CHANNELS"
           echo "Long-poll timeout: ${SWARM_LONG_POLL_TIMEOUT}s"
           echo "Disabled: $SWARM_DISABLED_BOTS"
