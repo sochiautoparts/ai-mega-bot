@@ -1,29 +1,37 @@
 name: Reaction Swarm 24/7 (10 bots)
 
 # ════════════════════════════════════════════════════════════════════════════
-# REACTION SWARM — 10 Telegram-ботов-админов ставят реакции и комментарии
-# на новые посты в каналах (sochiautoparts, bmw_mpower_club, chasnastya,
-# abakan_mebel). Работает 24/7 параллельно с AI Mega Bot ("Василий").
+# REACTION SWARM v3 — stable 24/7 (10 Telegram bots)
 #
-# АРХИТЕКТУРА (v2 — stable, no cancel loop, no PAT dependency):
-#   - schedule "0,30 * * * *" (каждые 30 мин) — 48 запусков в сутки
-#   - timeout-minutes: 25 (меньше 30, нет overlap)
-#   - cancel-in-progress: true — новый run убивает старый (5-10 сек gap)
-#   - NO re-dispatch — убран, т.к. GH_PAT_TOKEN был невалиден (401)
-#     Schedule каждые 30 мин надёжнее и не требует secrets
+# ПРОБЛЕМА v1/v2 (из логов):
+#   - GitHub schedule '0,30 * * * *' реально запускается каждые 1-3.3 часа
+#     (GitHub throttles schedule for free accounts in peak times)
+#   - timeout 25 мин → run отменялся раньше чем schedule создавал новый
+#   - Результат: 1-3 часа без swarm, посты терялись
+#
+# РЕШЕНИЕ v3:
+#   - timeout 360 мин (6 часов — максимум GitHub Actions)
+#   - schedule "0 * * * *" (каждый час) — fallback
+#   - workflow_dispatch (manual trigger)
+#   - cancel-in-progress: true — если schedule срабатывает, убивает старый
+#     (но т.к. schedule задерживается, старый run обычно уже завершился или ещё active)
 #   - auto-restart loop внутри run step — переживает crash swarm.py
 #   - swarm.py использует flock (.run.lock) — нет дублей инстансов
-#   - swarm.py использует deleteWebhook при init — быстрее освобождает getUpdates
 #
-# ЗАДЕРЖКА ДО ПОСТА:
-#   - Внутри 25-мин run: 1-2 сек (long-polling real-time)
-#   - Между runs: 5-10 сек (cancel transition + checkout)
-#   - Worst case: ~30 сек (если schedule задержан GitHub)
+# ПОКРЫТИЕ:
+#   - Run работает 6h real-time long-polling (1-2 сек задержка до поста)
+#   - Schedule каждый час пытается запустить новый run
+#   - Если schedule срабатывает пока run active → cancel-in-progress убивает старый
+#     (5-10 сек gap, Telegram queues updates, не теряются)
+#   - Если schedule задерживается 1-5h → старый run ещё active → 0 gap!
+#   - Worst case: schedule задерживается > 6h (очень редко) → gap
+#
+# ОЖИДАЕМОЕ: ~99% uptime, 1-2 сек задержка до поста
 # ════════════════════════════════════════════════════════════════════════════
 
 on:
   schedule:
-    - cron: '0,30 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -40,7 +48,7 @@ env:
 jobs:
   run-swarm:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
@@ -65,7 +73,7 @@ jobs:
           find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
           find . -type f -name "*.pyc" -delete 2>/dev/null || true
 
-      - name: Run Reaction Swarm with auto-restart
+      - name: Run Reaction Swarm with auto-restart (6h max)
         env:
           BOT_TOKEN_ALLSTARSPAY: ${{ secrets.BOT_TOKEN_ALLSTARSPAY }}
           BOT_TOKEN_TIRES24:     ${{ secrets.BOT_TOKEN_TIRES24 }}
@@ -85,20 +93,21 @@ jobs:
         run: |
           set +e
           cd reaction-swarm
-          echo "=== Starting Reaction Swarm (daemon mode) ==="
+          echo "=== Starting Reaction Swarm v3 (daemon mode, 6h max) ==="
           echo "Channels: $SWARM_CHANNELS"
           echo "Long-poll timeout: ${SWARM_LONG_POLL_TIMEOUT}s"
           echo "Stale window: ${SWARM_STALE_WINDOW}s (24h)"
           echo "Comment probability: ${SWARM_COMMENT_PROB}"
           echo "Disabled: $SWARM_DISABLED_BOTS"
-          echo "=== Launching with auto-restart (max 25 min) ==="
+          echo "Started at: $(date -u +%H:%M:%SZ)"
+          echo "=== Launching with auto-restart ==="
           RETRY=0
           LAST_START=0
           while true; do
             RETRY=$((RETRY+1))
             echo "--- Attempt $RETRY (started $(date -u +%H:%M:%SZ)) ---"
             NOW=$(date +%s)
-            if [ $((NOW - LAST_START)) -gt 300 ]; then
+            if [ $((NOW - LAST_START)) -gt 600 ]; then
               RETRY=1
             fi
             LAST_START=$NOW
