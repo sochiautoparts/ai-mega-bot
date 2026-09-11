@@ -253,6 +253,9 @@ class MegaBot:
                 logger.error(f"Polling error (attempt {polling_retries}): {type(e).__name__}: {e}")
                 if polling_retries > 50:
                     logger.error("Too many polling retries — exiting")
+                    try:
+                        await self.bot.send_message(config.OWNER_ID, "🤖⚠️ Василий: 50+ ошибок polling — не могу подключиться к Telegram. Проверь BOT_TOKEN / сеть. Run будет перезапущен workflow.")
+                    except Exception: pass
                     break
                 wait = 5 if polling_retries <= 5 else 10
                 logger.warning(f"Retrying polling in {wait}s...")
