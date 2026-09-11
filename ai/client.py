@@ -21,6 +21,7 @@ If all three fail, the caller decides what to do (private chat shows a varied
 
 import asyncio
 import logging
+import os
 import random
 from typing import List, Optional
 
@@ -37,6 +38,58 @@ _MODEL = "openclaw"  # routes to the agent's configured primary + fallbacks
 # Direct Pollinations backup (free, no key) — used if OpenClaw returns empty.
 _POLLINATIONS_URL = "https://text.pollinations.ai/openai/chat/completions"
 _POLLINATIONS_MODEL = "openai"
+
+# Cloudflare Workers AI (reliable tier — real content in 2026-09)
+_CF_MODEL = "@cf/meta/llama-4-scout-17b-16e-instruct"
+_CF_ACCOUNTS = []
+for _i in range(1, 3):
+    _aid = os.getenv(f"CF_ACCOUNT_ID_{_i}", "")
+    _tok = os.getenv(f"CF_API_TOKEN_{_i}", "")
+    if _aid and _tok:
+        _CF_ACCOUNTS.append((_aid, _tok))
+_CF_ACCOUNT_IDX = 0
+
+def _get_cf_account():
+    """Get next Cloudflare account (round-robin). Returns (account_id, token) or None."""
+    global _CF_ACCOUNT_IDX
+    if not _CF_ACCOUNTS:
+        return None
+    acct = _CF_ACCOUNTS[_CF_ACCOUNT_IDX % len(_CF_ACCOUNTS)]
+    _CF_ACCOUNT_IDX += 1
+    return acct
+
+# ─── Garbage detection: static placeholders / ads / quota notices ───
+# 2026-09-11: Pollinations began returning a static ~344-char notice with HTTP 200
+# on exhausted keys. Filter it out so garbage never reaches chat/posts.
+_GARBAGE_MARKERS = [
+    "pollinations.ai/keys", "api key is required", "invalid api key",
+    "rate limit", "rate_limit", "too many requests", "payment required",
+    "quota exceeded", "unauthorized", "support pollinations", "get one at",
+    "out of pollen", "need pollen", "subscribe to", "access denied",
+]
+_recent_resp_hashes: list = []
+
+def _looks_garbage(text, expect_russian=True):
+    """Reject static placeholder/ad/quota responses that are not real content."""
+    import hashlib as _hl
+    if not text: return True
+    t = text.strip()
+    if len(t) < 3: return True
+    tl = t.lower()
+    for m in _GARBAGE_MARKERS:
+        if m in tl: return True
+    # Identical response repeated across different prompts → static placeholder
+    h = _hl.md5(t.encode()).hexdigest()
+    if h in _recent_resp_hashes: return True
+    _recent_resp_hashes.append(h)
+    if len(_recent_resp_hashes) > 6: _recent_resp_hashes.pop(0)
+    # Bot replies in Russian — reject mostly-Latin garbage
+    if expect_russian:
+        letters = [c for c in t if c.isalpha()]
+        if letters:
+            cyr = sum(1 for c in letters if ('а' <= c.lower() <= 'я') or c.lower() == 'ё')
+            if cyr / len(letters) < 0.2: return True
+    return False
 
 # Reuse one httpx client (connection pooling) for the whole process.
 _client: Optional[httpx.AsyncClient] = None
@@ -170,14 +223,16 @@ async def _call_pollinations_direct(messages: List[dict], max_tokens: int,
                 # Model may emit a separate 'reasoning' field — ignore it,
                 # we only want the final answer in 'content'.
                 if content.strip():
-                    return content.strip()
+                    clean = content.strip()
+                    return clean if not _looks_garbage(clean) else ""
                 # Sometimes content is empty but reasoning has the answer —
                 # fall back to it (stripped) as last resort.
                 reasoning = msg.get("reasoning", "") or ""
                 if reasoning.strip() and not content.strip():
                     # reasoning often ends with the answer; take last 2 sentences
                     parts = reasoning.strip().split(".")
-                    return ".".join(parts[-3:]).strip()[:500] if parts else ""
+                    cand = ".".join(parts[-3:]).strip()[:500] if parts else ""
+                    return cand if not _looks_garbage(cand) else ""
         elif r.status_code == 429:
             logger.debug(f"pollinations 429 rate-limited")
         else:
@@ -206,7 +261,8 @@ async def _call_pollinations_get(prompt: str, timeout: float = 12.0) -> str:
         if r.status_code == 200:
             text = r.text.strip()
             if text and len(text) > 2:
-                return text[:2000]
+                clean = text[:2000]
+                return clean if not _looks_garbage(clean) else ""
         logger.debug(f"pollinations GET HTTP {r.status_code}")
     except (httpx.ReadTimeout, httpx.ConnectTimeout):
         logger.debug(f"pollinations GET timeout ({timeout}s)")
@@ -323,6 +379,12 @@ async def chat(
             _stats["openclaw_ok"] += 1
             logger.info(f"AI fast=openclaw-backup ({_t.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
+        # Cloudflare backup (reliable, real content)
+        out = await _call_cloudflare(messages, max_tokens, timeout=45.0)
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI fast=cloudflare-backup ({_t.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
     else:
         # Quality path: OpenClaw first (best model), Pollinations backup
         out = await _call_openclaw(messages, max_tokens, temperature, timeout=25.0)
@@ -339,6 +401,12 @@ async def chat(
             _stats["pollinations_backup"] += 1
             logger.info(f"AI pollinations-backup ({_t.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
+        # Cloudflare backup (reliable, real content, both accounts)
+        out = await _call_cloudflare(messages, max_tokens, timeout=60.0)
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI cloudflare-backup ({_t.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
 
     # Static fallback (only if allowed)
     _stats["fail"] += 1
@@ -348,6 +416,46 @@ async def chat(
         logger.info(f"AI static-fallback ({_t.time()-t0:.1f}s)")
         return fb
     logger.warning(f"AI ALL FAILED ({_t.time()-t0:.1f}s) — returning empty")
+    return ""
+
+
+async def _call_cloudflare(messages: List[dict], max_tokens: int, timeout: float = 60.0) -> str:
+    """Call Cloudflare Workers AI (reliable). Tries BOTH accounts before giving up."""
+    if _client is None:
+        await initialize()
+    for _ in range(2):
+        acct = _get_cf_account()
+        if not acct:
+            return ""
+        account_id, token = acct
+        url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1/chat/completions"
+        payload = {
+            "model": _CF_MODEL,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": 0.85,
+        }
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            r = await _client.post(url, json=payload, timeout=timeout, headers=headers)
+            if r.status_code == 200:
+                data = r.json()
+                # Cloudflare returns either OpenAI format or {result: {response: ...}}
+                choices = data.get("choices") or []
+                if choices:
+                    content = (choices[0].get("message", {}).get("content", "") or "").strip()
+                    if content and not _looks_garbage(content):
+                        return content
+                result = data.get("result", {})
+                if isinstance(result, dict):
+                    content = (result.get("response", "") or "").strip()
+                    if content and not _looks_garbage(content):
+                        return content
+        except Exception as e:
+            _stats["last_error"] = f"Cloudflare: {type(e).__name__}: {e}"
     return ""
 
 
