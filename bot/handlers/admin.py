@@ -34,12 +34,24 @@ async def cmd_stats(message: Message):
     if not _is_admin(message):
         return
     s = ai_client.stats()
+    loc = s.get("local") or {}
+    loc_line = ""
+    if loc:
+        loc_line = (
+            f"\n\n🧠 Локальная 7B:\n"
+            f"Загружена: {'да' if loc.get('loaded') else 'нет'}\n"
+            f"Генераций: {loc.get('ok', 0)}/{loc.get('gens', 0)}\n"
+            f"Скорость: {loc.get('avg_tok_per_s', 0)} tok/s\n"
+            f"Токенов: {loc.get('total_tokens', 0)}"
+        )
+        if loc.get("last_error"):
+            loc_line += f"\nОшибка: {loc['last_error'][:60]}"
     await message.reply(
         f"📊 Статистика AI (через OpenClaw):\n"
         f"Запросов: {s.get('requests', 0)}\n"
         f"Успешно: {s.get('success', 0)}\n"
         f"Ошибок: {s.get('fail', 0)}\n"
-        f"Последняя ошибка: {s.get('last_error', '—')[:120]}"
+        f"Последняя ошибка: {s.get('last_error', '—')[:120]}{loc_line}"
     )
 
 

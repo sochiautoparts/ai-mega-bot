@@ -28,6 +28,7 @@ from typing import List, Optional
 import httpx
 
 from bot.config import config
+from ai.local_model import call_local
 
 logger = logging.getLogger("mega.ai")
 
@@ -314,6 +315,7 @@ async def chat(
     temperature: float = 0.9,
     allow_static_fallback: bool = True,
     fast: bool = False,
+    prefer_local: bool = False,
 ) -> str:
     """Single-turn chat completion.
 
@@ -343,6 +345,15 @@ async def chat(
     if extra_context:
         user_content = f"{extra_context}\n\n---\n\n{prompt}"
     messages.append({"role": "user", "content": user_content})
+
+    # Локальная 7B первой — только при явном prefer_local (LOCAL_MODEL_PRIMARY=1)
+    if prefer_local:
+        out = await call_local(messages, max_tokens, None, mode="post")
+        if out:
+            _stats["success"] += 1
+            logger.info(f"AI primary=local-7B ({_t.time()-t0:.1f}s) len={len(out)}")
+            return _strip_name_prefix(out)
+        logger.info("Local 7B unavailable/empty — falling back to cloud cascade")
 
     if fast:
         # Ultra-fast path: for short prompts without heavy context, use GET
@@ -407,6 +418,13 @@ async def chat(
             _stats["success"] += 1
             logger.info(f"AI cloudflare-backup ({_t.time()-t0:.1f}s) len={len(out)}")
             return _strip_name_prefix(out)
+
+    # LOCAL 7B last-resort: автономная модель без сети/ключей/лимитов
+    out = await call_local(messages, max_tokens, temperature)
+    if out:
+        _stats["success"] += 1
+        logger.info(f"AI fallback=local-7B ({_t.time()-t0:.1f}s) len={len(out)}")
+        return _strip_name_prefix(out)
 
     # Static fallback (only if allowed)
     _stats["fail"] += 1
@@ -607,4 +625,10 @@ async def transcribe_audio(audio_data_uri: str, timeout: float = 30.0) -> str:
 
 
 def stats() -> dict:
-    return dict(_stats)
+    s = dict(_stats)
+    try:
+        from ai.local_model import stats as _local_stats
+        s["local"] = _local_stats()
+    except Exception:
+        pass
+    return s
