@@ -15,6 +15,8 @@ from aiogram import Bot
 from aiogram.types import Message
 from aiogram.exceptions import TelegramRetryAfter
 
+from bot.config import config
+
 logger = logging.getLogger("mega.safe_send")
 
 # Simple per-chat rate limiter: max N messages per minute per chat.
@@ -40,11 +42,13 @@ async def safe_reply(
     text: str,
     always_reply: bool = True,
     priority: bool = False,
-    max_per_min: int = 15,
+    max_per_min: int = 0,
 ) -> bool:
     """Reply to a message, handling rate limits. Returns True on success."""
     if not text:
         return False
+    if max_per_min <= 0:
+        max_per_min = config.GROUP_MAX_PER_MINUTE
     chat_id = message.chat.id
     if not _can_send(chat_id, max_per_min, priority):
         logger.info(f"rate-limited skip in {chat_id} (priority={priority})")
@@ -77,7 +81,7 @@ async def safe_reply(
 
 
 async def safe_send(bot: Bot, chat_id: int, text: str, priority: bool = False,
-                    max_per_min: int = 15) -> bool:
+                    max_per_min: int = 0) -> bool:
     """Send a message to a chat (not as a reply). Handles rate limits.
 
     Used by the proactive topic starter which has no message to reply to.
@@ -85,6 +89,8 @@ async def safe_send(bot: Bot, chat_id: int, text: str, priority: bool = False,
     """
     if not text:
         return False
+    if max_per_min <= 0:
+        max_per_min = config.GROUP_MAX_PER_MINUTE
     if not _can_send(chat_id, max_per_min, priority):
         logger.info(f"rate-limited skip send to {chat_id}")
         return False

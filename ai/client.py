@@ -315,7 +315,7 @@ async def chat(
     temperature: float = 0.9,
     allow_static_fallback: bool = True,
     fast: bool = False,
-    prefer_local: bool = False,
+    prefer_local: Optional[bool] = None,
 ) -> str:
     """Single-turn chat completion.
 
@@ -346,7 +346,9 @@ async def chat(
         user_content = f"{extra_context}\n\n---\n\n{prompt}"
     messages.append({"role": "user", "content": user_content})
 
-    # Локальная 7B первой — только при явном prefer_local (LOCAL_MODEL_PRIMARY=1)
+    # Локальная 7B первой — при явном prefer_local (аргумент) или LOCAL_MODEL_PRIMARY=1/true/yes
+    if prefer_local is None:
+        prefer_local = os.getenv("LOCAL_MODEL_PRIMARY", "").strip().lower() in ("1", "true", "yes")
     if prefer_local:
         out = await call_local(messages, max_tokens, None, mode="post")
         if out:

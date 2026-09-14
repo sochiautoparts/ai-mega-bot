@@ -14,6 +14,7 @@ from typing import Optional, List
 
 from aiogram import Bot
 from aiogram.types import ReactionTypeEmoji
+from aiogram.exceptions import TelegramRetryAfter
 
 from bot.config import config
 from bot import database as db
@@ -28,7 +29,7 @@ _POSITIVE = ["👍", "❤", "🔥", "😄", "👏", "🎉", "💪", "✨"]
 _LOVE = ["❤", "😍", "🥰", "💙", "💜"]
 _FUN = ["😄", "😂", "🤣", "😆", "😎"]
 _WOW = ["😮", "😱", "🤯", "👀", "🔥"]
-_SAD = ["😢", "😔", "🎉", "💔"]
+_SAD = ["😢", "😔", "😞", "💔"]
 _THINK = ["🤔", "👀", "🧐", "💡"]
 _NEUTRAL = ["👍", "👏", "🎉", "✨"]
 
@@ -136,8 +137,17 @@ async def maybe_react(
                 pass
         if "REACTION_INVALID" in msg or "not enough rights" in msg.lower():
             logger.warning(f"no reaction rights in chat {chat_id} (bot not admin?) — {e}")
-        elif "RetryAfter" in msg:
-            logger.warning(f"reaction rate-limited in chat {chat_id} — {e}")
+        elif isinstance(e, TelegramRetryAfter):
+            # Flood control: wait it out and retry the reaction once.
+            wait = e.retry_after + 1
+            logger.warning(f"reaction rate-limited in chat {chat_id} — retrying in {wait}s")
+            try:
+                await asyncio.sleep(wait)
+                await bot.set_message_reaction(chat_id, message_id, reaction_types)
+                await db.mark_reacted(chat_id, message_id)
+                return True
+            except Exception as e2:
+                logger.warning(f"reaction retry failed ({chat_id}/{message_id}): {e2}")
         else:
             logger.warning(f"reaction failed ({chat_id}/{message_id}): {e}")
         return False

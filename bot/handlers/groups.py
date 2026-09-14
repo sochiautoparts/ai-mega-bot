@@ -26,7 +26,7 @@ import logging
 import random
 import re
 import time
-from typing import List
+from typing import List, Optional
 
 from aiogram import Router, F
 from aiogram.types import Message
@@ -127,15 +127,26 @@ def _should_skip_duplicate(text: str, chat_id: int) -> bool:
 
 
 async def _log_group_message(message: Message, content: str = "", is_media: bool = False,
-                              media_caption: str = "", is_bot: bool = False):
+                              media_caption: str = "", is_bot: bool = False,
+                              user_id: Optional[int] = None, username: Optional[str] = None,
+                              first_name: Optional[str] = None):
     u = message.from_user
+    bot_reply = is_bot  # caller says: `content` is the BOT's own reply
     if not is_bot and u and (u.id == config.BOT_ID or u.is_bot):
         is_bot = True
+    if bot_reply and user_id is None:
+        # The message object belongs to the person the bot replied to, so
+        # from_user would store the bot's reply under the human's user_id and
+        # corrupt dialog_history / recent transcript / user counters.
+        # Log the bot's replies under the bot's own identity.
+        user_id = config.BOT_ID
+        username = (config.BOT_USERNAME or "").lstrip("@")
+        first_name = "Василий"
     await db.add_group_message(
         chat_id=message.chat.id,
-        user_id=u.id if u else 0,
-        username=(u.username or "") if u else "",
-        first_name=(u.first_name or "") if u else "",
+        user_id=user_id if user_id is not None else (u.id if u else 0),
+        username=username if username is not None else ((u.username or "") if u else ""),
+        first_name=first_name if first_name is not None else ((u.first_name or "") if u else ""),
         content=content or (message.text or ""),
         is_media=is_media,
         media_caption=media_caption,
@@ -158,6 +169,7 @@ def _is_in_bot_loop(message: Message) -> bool:
     now = time.time()
     tracker = _reply_chain_tracker.get(chat_id, {})
     tracker = {k: v for k, v in tracker.items() if now - v[1] < _THREAD_TTL}
+    _reply_chain_tracker[chat_id] = tracker  # write back after TTL filtering
     count, _ = tracker.get(thread_key, (0, now))
     return count >= _MAX_BOT_REPLIES_PER_THREAD
 

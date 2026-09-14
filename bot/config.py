@@ -6,6 +6,13 @@ All settings load from environment variables (GitHub Actions Secrets in prod,
 — every other provider is an optional upgrade.
 """
 
+# Load .env (local dev) BEFORE any os.getenv() below.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 import os
 from dataclasses import dataclass, field
 from typing import List

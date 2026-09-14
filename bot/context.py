@@ -60,7 +60,7 @@ def chat_descriptor(message: Message) -> str:
 
 def is_directed_at_bot(message: Message) -> bool:
     """True if the message is addressed to the bot (mention / reply / name)."""
-    text = (message.text or "").lower()
+    text = (message.text or message.caption or "").lower()
     handle = config.BOT_HANDLE.lower()
     if not handle:
         return False
@@ -222,10 +222,8 @@ _FACT_PATTERNS = [
     ("я инженер", "инженер"),
     ("я студент", "студент"),
     ("я езжу на ", "ездит на"),
-    ("у меня ", "имеет"),
     ("я был в ", "был в"),
     ("я была в ", "был в"),
-    ("мне ", "упоминает что ему"),
 ]
 
 
@@ -237,16 +235,18 @@ async def extract_and_store_facts(user_id: int, name: str, text: str,
     """
     if not text or not name:
         return []
-    t = text.lower().strip()
+    low = text.lower()  # same string/indexes as `text` (no .strip() offset)
     stored = []
     for pattern, label in _FACT_PATTERNS:
-        if pattern in t:
-            idx = t.index(pattern) + len(pattern)
-            rest = text[idx:idx + 80].split(".")[0].split("!")[0].split("?")[0].strip()
-            if rest and 2 < len(rest) < 80:
-                fact = f"{name} {label} {rest}".strip()
-                if not await db.has_user_fact(user_id, fact):
-                    await db.add_user_fact(user_id, fact, source_chat)
-                    stored.append(fact)
-                break  # one fact per message
+        idx = low.find(pattern)
+        if idx == -1:
+            continue
+        value = low[idx + len(pattern):].strip()
+        rest = value[:80].split(".")[0].split("!")[0].split("?")[0].strip()
+        if rest and 2 < len(rest) < 80:
+            fact = f"{name} {label} {rest}".strip()
+            if not await db.has_user_fact(user_id, fact):
+                await db.add_user_fact(user_id, fact, source_chat)
+                stored.append(fact)
+            break  # one fact per message
     return stored

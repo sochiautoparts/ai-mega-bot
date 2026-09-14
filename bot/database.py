@@ -125,6 +125,11 @@ async def init_db() -> None:
 async def close_db() -> None:
     global _db
     if _db:
+        try:
+            # Persist the WAL into the main DB file before closing.
+            await _db.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        except Exception as e:
+            logger.debug(f"wal_checkpoint failed: {e}")
         await _db.close()
         _db = None
 

@@ -48,6 +48,7 @@ from bot.handlers.inline import inline_router
 
 OPENCLAW_STATE_DIR = os.getenv("OPENCLAW_STATE_DIR", str(Path.cwd() / ".openclaw-state"))
 _openclaw_proc: subprocess.Popen | None = None
+_gateway_log_f = None  # keep the gateway log fd so we can close it on shutdown
 
 
 def _generate_openclaw_config() -> str:
@@ -66,6 +67,7 @@ def _generate_openclaw_config() -> str:
 
 def _start_openclaw_gateway(config_path: str) -> subprocess.Popen:
     """Start the OpenClaw Gateway as a subprocess."""
+    global _gateway_log_f
     env = os.environ.copy()
     env["OPENCLAW_STATE_DIR"] = OPENCLAW_STATE_DIR
     env["OPENCLAW_CONFIG_PATH"] = config_path
@@ -84,6 +86,7 @@ def _start_openclaw_gateway(config_path: str) -> subprocess.Popen:
     logger.info(f"Starting OpenClaw Gateway: {' '.join(cmd)}")
     logger.info(f"Gateway log: {log_path}")
     log_f = open(log_path, "a", buffering=1)
+    _gateway_log_f = log_f  # remember the fd — close it on shutdown (fd leak fix)
     proc = subprocess.Popen(
         cmd, env=env, stdout=log_f, stderr=subprocess.STDOUT,
         # detach from our stdin so it doesn't share the tty
@@ -115,7 +118,7 @@ async def _wait_for_gateway(timeout: float = 120.0) -> bool:
 
 
 def _stop_openclaw_gateway() -> None:
-    global _openclaw_proc
+    global _openclaw_proc, _gateway_log_f
     if _openclaw_proc is not None:
         try:
             _openclaw_proc.terminate()
@@ -126,6 +129,12 @@ def _stop_openclaw_gateway() -> None:
         except Exception as e:
             logger.debug(f"gateway stop error: {e}")
         _openclaw_proc = None
+    if _gateway_log_f is not None:
+        try:
+            _gateway_log_f.close()
+        except Exception as e:
+            logger.debug(f"gateway log close error: {e}")
+        _gateway_log_f = None
 
 
 class MegaBot:
@@ -213,35 +222,25 @@ class MegaBot:
         allowed = ["message", "edited_message", "channel_post", "edited_channel_post", "inline_query", "chosen_inline_result"]
         logger.info("=== Василий в сети — слушаю сообщения ===")
         # Startup diagnostic: check if bot can access channels
+        # NB: use the shared connection directly — `async with _db._conn()`
+        # would CLOSE the global connection (aiosqlite __aexit__) and kill
+        # every DB call for the rest of the run.
         try:
             from bot import database as _db
-            async with _db._conn() as _conn:
-                _cur = await _conn.execute("SELECT chat_id, username, title FROM channels WHERE enabled=1 LIMIT 5")
-                _rows = await _cur.fetchall()
-                logger.info(f"Startup: {len(_rows)} channels in DB")
-                for _row in _rows:
-                    try:
-                        _chat = await self.bot.get_chat(_row["chat_id"])
-                        _me = await self.bot.get_chat_member(_row["chat_id"], self.bot.id)
-                        logger.info(f"  channel {_row['chat_id']} (@{_row['username'] or '?'}): access=OK, member_status={_me.status}")
-                    except Exception as _e:
-                        logger.warning(f"  channel {_row['chat_id']}: access FAILED — {_e}")
+            _conn = _db._conn()
+            _cur = await _conn.execute("SELECT chat_id, username, title FROM channels WHERE enabled=1 LIMIT 5")
+            _rows = await _cur.fetchall()
+            await _cur.close()
+            logger.info(f"Startup: {len(_rows)} channels in DB")
+            for _row in _rows:
+                try:
+                    _chat = await self.bot.get_chat(_row["chat_id"])
+                    _me = await self.bot.get_chat_member(_row["chat_id"], self.bot.id)
+                    logger.info(f"  channel {_row['chat_id']} (@{_row['username'] or '?'}): access=OK, member_status={_me.status}")
+                except Exception as _e:
+                    logger.warning(f"  channel {_row['chat_id']}: access FAILED — {_e}")
         except Exception as _e:
             logger.warning(f"Startup channel diagnostic failed: {_e}")
-        # React to recent channel posts on startup (in case bot missed them)
-        try:
-            from bot import database as _db
-            async with _db._conn() as _conn:
-                _cur = await _conn.execute("SELECT chat_id FROM channels WHERE enabled=1")
-                _rows = await _cur.fetchall()
-                for _row in _rows:
-                    _chat_id = _row["chat_id"]
-                    try:
-                        # Get recent messages from channel
-                        _recent = await self.bot.get_chat(_chat_id)
-                        logger.info(f"Startup: checking channel {_chat_id} for recent posts")
-                    except: pass
-        except: pass
 
         polling_retries = 0
         while True:
@@ -265,6 +264,10 @@ class MegaBot:
             await ai_client.close()
         except Exception:
             pass
+        try:
+            await db.close_db()  # close DB + persist WAL
+        except Exception as e:
+            logger.warning(f"DB close failed: {e}")
 
     async def _notify_owner(self) -> None:
         mood = await current_mood_descriptor()

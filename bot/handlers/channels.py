@@ -82,12 +82,9 @@ async def _post_comment(message: Message, post_text: str):
         await asyncio.sleep(random.uniform(5, 15))  # natural delay
         
         # Get the linked discussion group for this channel
-        chat = await message.bot.get_chat(message.chat.id)
         linked_chat_id = None
-        
-        # Try to get linked chat
         try:
-            # For channels with discussion group
+            # For channels with a discussion group
             full_chat = await message.bot.get_chat(message.chat.id)
             if hasattr(full_chat, 'linked_chat_id') and full_chat.linked_chat_id:
                 linked_chat_id = full_chat.linked_chat_id
@@ -102,7 +99,7 @@ async def _post_comment(message: Message, post_text: str):
                 await message.bot.send_message(
                     linked_chat_id,
                     comment_text,
-                    reply_to_message_id=message.message_id,
+                    message_thread_id=message.message_id,  # comment thread of the channel post
                     disable_web_page_preview=True
                 )
                 logger.info(f"  Comment posted to discussion group: {comment_text[:50]}")
@@ -147,11 +144,12 @@ async def handle_channel_post(message: Message):
     if already:
         return
 
-    # 1. Reactions (always)
+    # 1. Reactions (respect CHANNEL_REACTION_PROB)
     try:
+        force = random.random() <= config.CHANNEL_REACTION_PROB
         ok = await maybe_react(
             message.bot, chat.id, message.message_id, post_text,
-            prob=1.0, force=True, count=3,
+            prob=config.CHANNEL_REACTION_PROB, force=force, count=3,
         )
         logger.info(f"  maybe_react: {'OK' if ok else 'FAILED'}")
     except Exception as e:
@@ -175,9 +173,10 @@ async def handle_channel_post_catchall(message: Message):
         return
 
     try:
+        force = random.random() <= config.CHANNEL_REACTION_PROB
         ok = await maybe_react(
             message.bot, chat.id, message.message_id, "",
-            prob=1.0, force=True, count=3,
+            prob=config.CHANNEL_REACTION_PROB, force=force, count=3,
         )
         logger.info(f"  maybe_react (catch-all): {'OK' if ok else 'FAILED'}")
     except Exception as e:
