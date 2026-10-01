@@ -203,7 +203,7 @@ def build_config() -> dict:
             "auth": {"mode": "none"},
             "http": {
                 "endpoints": {
-                    "chatCompletions": {"enabled": True, "maxBodyBytes": 8388608},
+                    "chatCompletions": {"enabled": True},
                 },
             },
             "controlUi": {"enabled": False},

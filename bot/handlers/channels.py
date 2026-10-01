@@ -149,7 +149,7 @@ async def handle_channel_post(message: Message):
         force = random.random() <= config.CHANNEL_REACTION_PROB
         ok = await maybe_react(
             message.bot, chat.id, message.message_id, post_text,
-            prob=config.CHANNEL_REACTION_PROB, force=force, count=3,
+            prob=config.CHANNEL_REACTION_PROB, force=force, count=1,
         )
         logger.info(f"  maybe_react: {'OK' if ok else 'FAILED'}")
     except Exception as e:
@@ -176,7 +176,7 @@ async def handle_channel_post_catchall(message: Message):
         force = random.random() <= config.CHANNEL_REACTION_PROB
         ok = await maybe_react(
             message.bot, chat.id, message.message_id, "",
-            prob=config.CHANNEL_REACTION_PROB, force=force, count=3,
+            prob=config.CHANNEL_REACTION_PROB, force=force, count=1,
         )
         logger.info(f"  maybe_react (catch-all): {'OK' if ok else 'FAILED'}")
     except Exception as e:

@@ -87,7 +87,7 @@ jobs:
 
       - name: Install OpenClaw
         run: |
-          npm install -g openclaw@latest
+          npm install -g openclaw@2026.9.7 # pinned: 2026.9.7 отвергает maxBodyBytes в конфиге (config invalid). НЕ обновлять на @latest без теста: gen_openclaw_config.py должен совпадать с новой схемой
           openclaw --version
           echo "=== OpenClaw installed ==="
 
@@ -197,8 +197,8 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           # ── Cloudflare Workers AI (reliable backup for AI client) ──
-          CF_ACCOUNT_ID_1: ${{ secrets.CF_ACCOUNT_ID_1 }}
-          CF_API_TOKEN_1: ${{ secrets.CF_API_TOKEN_1 }}
+          CF_ACCOUNT_ID_1: ${{ secrets.CF_ACCOUNT_ID }}  # секрет в репо называется CF_ACCOUNT_ID
+          CF_API_TOKEN_1: ${{ secrets.CF_API_TOKEN }}  # секрет в репо называется CF_API_TOKEN
           CF_ACCOUNT_ID_2: ${{ secrets.CF_ACCOUNT_ID_2 }}
           CF_API_TOKEN_2: ${{ secrets.CF_API_TOKEN_2 }}
           # ── Behaviour ──
